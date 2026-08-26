@@ -1,39 +1,387 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://bluba-anticipa.local/contracts/daily-record.schema.json",
-  "title": "DailyRecord",
-  "type": "object",
-  "additionalProperties": false,
-  "required": ["subject_id", "recorded_at", "context", "observations"],
-  "properties": {
-    "subject_id": {"type": "string", "minLength": 1},
-    "recorded_at": {"type": "string", "format": "date-time"},
-    "context": {"type": "string", "enum": ["family", "school", "professional"]},
-    "source_actor_id": {"type": ["string", "null"]},
-    "observations": {
-      "type": "array",
-      "minItems": 1,
-      "items": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": ["feature_key", "status"],
-        "properties": {
-          "feature_key": {"type": "string", "minLength": 1},
-          "status": {"type": "string", "enum": ["observed", "unknown"]},
-          "value": {"type": ["string", "number", "boolean", "null"]},
-          "note": {"type": ["string", "null"]}
+  "$id": "urn:bluba:anticipa:contracts:daily-record:0.1.0",
+  "title": "Bluba Anticipa Daily Record Contract",
+  "description": "Contrato canónico para registros cotidianos confirmados del MVP NeuroHack 2026. Sirve de frontera entre captura móvil/IA, Backend y el pipeline longitudinal de Data/ML. Un DailyRecord representa información observada y confirmada; un ObservationDraft pendiente no es un DailyRecord y no debe alimentar el motor predictivo.",
+  "x-contract-version": "0.1.0",
+  "x-domain-invariants": [
+    "Un DailyRecord contiene solamente información confirmada. Un ObservationDraft PENDING_CONFIRMATION no puede persistirse ni utilizarse como evidencia predictiva.",
+    "recorded_at representa el instante asociado a la observación y debe preservarse independientemente de created_at, que representa la persistencia en Backend.",
+    "Dato faltante no equivale a dato normal. Las variables no observadas deben omitirse o representarse explícitamente como null/desconocido cuando corresponda; nunca deben imputarse silenciosamente en este contrato.",
+    "source, context y provenance deben permitir diferenciar observación humana, extracción automática confirmada y contexto funcional del registro.",
+    "Los valores derivados longitudinales, scores, bandas de riesgo y confianza no pertenecen a DailyRecord. Se calculan posteriormente mediante FeatureEngineeringService/PredictionService.",
+    "La persistencia de un DailyRecord puede solicitar un recálculo de riesgo de forma asincrónica; la escritura no debe bloquearse esperando dicho cálculo.",
+    "Las modificaciones relevantes deben conservar trazabilidad mediante versionado/sustitución o auditoría equivalente en Backend.",
+    "sensory_profile_snapshot, cuando se incluya, es una copia contextual conocida al momento del registro; la fuente maestra del perfil sensorial pertenece al perfil del niño, no al check-in cotidiano."
+  ],
+  "oneOf": [
+    { "$ref": "#/$defs/DailyRecordCreateRequest" },
+    { "$ref": "#/$defs/DailyRecord" },
+    { "$ref": "#/$defs/DailyRecordAcceptedResponse" }
+  ],
+  "$defs": {
+    "RecordSource": {
+      "type": "string",
+      "enum": ["FAMILY", "SCHOOL", "PROFESSIONAL"]
+    },
+    "UsageContext": {
+      "type": "string",
+      "enum": ["HOME", "SCHOOL", "PROFESSIONAL"]
+    },
+    "ObservationProvenance": {
+      "type": "string",
+      "enum": ["HUMAN_STRUCTURED", "AI_EXTRACTED_HUMAN_CONFIRMED"],
+      "description": "Procedencia semántica del dato confirmado. Una extracción de IA solamente puede usar AI_EXTRACTED_HUMAN_CONFIRMED después de confirmación/corrección humana."
+    },
+    "ObservationInputType": {
+      "type": "string",
+      "enum": ["STRUCTURED_FORM", "TEXT", "AUDIO"]
+    },
+    "PersistenceStatus": {
+      "type": "string",
+      "enum": ["PERSISTED", "PENDING_SYNC", "SYNCED"]
+    },
+    "SleepQuality": {
+      "type": ["string", "null"],
+      "enum": ["reparador", "interrumpido", "dificultad_conciliacion", "desconocido", null]
+    },
+    "WakeState": {
+      "type": ["string", "null"],
+      "enum": ["tranquilo_alegre", "irritable_llorando", "cansado_sueno", "desconocido", null]
+    },
+    "RegulationLevel": {
+      "type": ["string", "null"],
+      "enum": ["excelente", "estable_con_apoyo", "desregulacion_frecuente", "desconocido", null]
+    },
+    "AlertLevel": {
+      "type": ["string", "null"],
+      "enum": ["bajo", "optimo", "alto", "desconocido", null],
+      "description": "Categoría nominal. Bajo y alto pueden representar alejamiento del estado óptimo; no debe tratarse como escala lineal simple."
+    },
+    "DailyRecordFeatures": {
+      "type": "object",
+      "description": "Variables observadas directamente en el registro. El objeto es deliberadamente parcial porque familia, escuela y profesionales pueden aportar subconjuntos distintos. El pipeline de predicción construye después un snapshot canónico completo y explícita los faltantes.",
+      "minProperties": 1,
+      "properties": {
+        "sleep_quality": { "$ref": "#/$defs/SleepQuality" },
+        "sleep_hours": {
+          "type": ["number", "null"],
+          "minimum": 0,
+          "maximum": 24,
+          "description": "Duración de sueño cuando fue registrada; null conserva ausencia explícita."
         },
-        "allOf": [
-          {
-            "if": {"properties": {"status": {"const": "unknown"}}},
-            "then": {"properties": {"value": {"type": "null"}}}
+        "wake_state": { "$ref": "#/$defs/WakeState" },
+        "regulation_level": { "$ref": "#/$defs/RegulationLevel" },
+        "alert_level": { "$ref": "#/$defs/AlertLevel" },
+        "routine_change": {
+          "type": ["boolean", "null"],
+          "description": "Indica cambio de rutina conocido al momento del registro."
+        },
+        "gastrointestinal_status": {
+          "type": ["string", "null"],
+          "minLength": 1,
+          "maxLength": 64,
+          "description": "Categoría normalizada gastrointestinal. El enum definitivo permanece abierto hasta cerrar el diccionario de datos del MVP."
+        },
+        "observed_behavior": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 96
+          },
+          "uniqueItems": true,
+          "maxItems": 20,
+          "description": "Tags de comportamiento observados y confirmados, no explicación generada por el modelo."
+        },
+        "exceptional_event": {
+          "type": ["boolean", "null"],
+          "description": "Existencia de un evento excepcional conocido al momento del registro."
+        },
+        "sensory_profile_snapshot": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 96
+          },
+          "uniqueItems": true,
+          "maxItems": 20,
+          "description": "Snapshot opcional de tags del perfil sensorial ya conocido. No debe solicitarse como dato cotidiano si el perfil ya existe en la entidad Child."
+        }
+      },
+      "additionalProperties": false
+    },
+    "SourceObservation": {
+      "type": ["object", "null"],
+      "description": "Trazabilidad hacia la observación que originó el registro. No conserva audio binario; para voz se conserva como máximo la transcripción necesaria según política de datos.",
+      "required": ["input_type"],
+      "properties": {
+        "input_type": { "$ref": "#/$defs/ObservationInputType" },
+        "observation_draft_id": {
+          "type": ["string", "null"],
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "source_text": {
+          "type": ["string", "null"],
+          "maxLength": 4000,
+          "description": "Texto escrito o transcripción confirmada cuando sea necesario conservarlo para trazabilidad."
+        }
+      },
+      "additionalProperties": false
+    },
+    "DailyRecordCreateRequest": {
+      "type": "object",
+      "title": "DailyRecordCreateRequest",
+      "description": "Payload lógico para crear un DailyRecord confirmado. child_id puede viajar en el path HTTP y por eso no forma parte obligatoria de este objeto.",
+      "required": ["recorded_at", "source", "features"],
+      "properties": {
+        "recorded_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Instante de la observación/registro cotidiano. Debe incluir offset de zona horaria cuando provenga del cliente."
+        },
+        "source": { "$ref": "#/$defs/RecordSource" },
+        "context": { "$ref": "#/$defs/UsageContext" },
+        "features": { "$ref": "#/$defs/DailyRecordFeatures" },
+        "notes": {
+          "type": ["string", "null"],
+          "maxLength": 2000
+        },
+        "provenance": {
+          "$ref": "#/$defs/ObservationProvenance",
+          "default": "HUMAN_STRUCTURED"
+        },
+        "source_observation": { "$ref": "#/$defs/SourceObservation" }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "provenance": { "const": "AI_EXTRACTED_HUMAN_CONFIRMED" }
+            },
+            "required": ["provenance"]
+          },
+          "then": {
+            "required": ["source_observation"],
+            "properties": {
+              "source_observation": {
+                "type": "object",
+                "required": ["input_type", "observation_draft_id"],
+                "properties": {
+                  "input_type": { "$ref": "#/$defs/ObservationInputType" },
+                  "observation_draft_id": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128
+                  },
+                  "source_text": {
+                    "type": ["string", "null"],
+                    "maxLength": 4000
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
           }
-        ]
+        }
+      ],
+      "additionalProperties": false
+    },
+    "DailyRecord": {
+      "type": "object",
+      "title": "DailyRecord",
+      "description": "Entidad longitudinal confirmada y persistida. Es evidencia observable para baseline/features; no contiene scores ni features temporales derivadas.",
+      "required": [
+        "record_id",
+        "child_id",
+        "recorded_at",
+        "created_at",
+        "source",
+        "context",
+        "provenance",
+        "features",
+        "record_version"
+      ],
+      "properties": {
+        "record_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "child_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "author_user_id": {
+          "type": ["string", "null"],
+          "minLength": 1,
+          "maxLength": 128,
+          "description": "Identificador del usuario autenticado que confirmó el registro cuando corresponda."
+        },
+        "recorded_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updated_at": {
+          "type": ["string", "null"],
+          "format": "date-time"
+        },
+        "source": { "$ref": "#/$defs/RecordSource" },
+        "context": { "$ref": "#/$defs/UsageContext" },
+        "provenance": { "$ref": "#/$defs/ObservationProvenance" },
+        "features": { "$ref": "#/$defs/DailyRecordFeatures" },
+        "notes": {
+          "type": ["string", "null"],
+          "maxLength": 2000
+        },
+        "source_observation": { "$ref": "#/$defs/SourceObservation" },
+        "record_version": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Versión lógica del registro para preservar trazabilidad cuando se permiten correcciones."
+        },
+        "supersedes_record_id": {
+          "type": ["string", "null"],
+          "minLength": 1,
+          "maxLength": 128,
+          "description": "Registro anterior que esta versión sustituye, si Backend implementa correcciones como append-only/versionadas."
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "provenance": { "const": "AI_EXTRACTED_HUMAN_CONFIRMED" }
+            },
+            "required": ["provenance"]
+          },
+          "then": {
+            "required": ["source_observation"],
+            "properties": {
+              "source_observation": {
+                "type": "object",
+                "required": ["input_type", "observation_draft_id"],
+                "properties": {
+                  "input_type": { "$ref": "#/$defs/ObservationInputType" },
+                  "observation_draft_id": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128
+                  },
+                  "source_text": {
+                    "type": ["string", "null"],
+                    "maxLength": 4000
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        }
+      ],
+      "additionalProperties": false
+    },
+    "DailyRecordAcceptedResponse": {
+      "type": "object",
+      "title": "DailyRecordAcceptedResponse",
+      "description": "Respuesta mínima después de persistir/aceptar un DailyRecord. El recálculo de riesgo puede continuar asincrónicamente.",
+      "required": [
+        "record_id",
+        "child_id",
+        "recorded_at",
+        "source",
+        "persistence_status",
+        "risk_recalculation_requested"
+      ],
+      "properties": {
+        "record_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "child_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "recorded_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "source": { "$ref": "#/$defs/RecordSource" },
+        "persistence_status": { "$ref": "#/$defs/PersistenceStatus" },
+        "risk_recalculation_requested": {
+          "type": "boolean"
+        },
+        "risk_recalculation_request_id": {
+          "type": ["string", "null"],
+          "minLength": 1,
+          "maxLength": 128
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "examples": [
+    {
+      "recorded_at": "2026-08-26T07:40:00-04:00",
+      "source": "FAMILY",
+      "context": "HOME",
+      "features": {
+        "sleep_quality": "interrumpido",
+        "sleep_hours": 6.5,
+        "wake_state": "irritable_llorando",
+        "regulation_level": "estable_con_apoyo",
+        "routine_change": true
+      },
+      "notes": "Cambio de sala informado para hoy.",
+      "provenance": "HUMAN_STRUCTURED",
+      "source_observation": {
+        "input_type": "STRUCTURED_FORM",
+        "observation_draft_id": null,
+        "source_text": null
       }
     },
-    "source": {
-      "type": "string",
-      "enum": ["form", "text_confirmed", "voice_confirmed", "import"]
+    {
+      "record_id": "DR-00412",
+      "child_id": "CH-002",
+      "author_user_id": "USR-031",
+      "recorded_at": "2026-08-26T07:40:00-04:00",
+      "created_at": "2026-08-26T07:42:11-04:00",
+      "updated_at": null,
+      "source": "FAMILY",
+      "context": "HOME",
+      "provenance": "AI_EXTRACTED_HUMAN_CONFIRMED",
+      "features": {
+        "sleep_quality": "interrumpido",
+        "wake_state": "irritable_llorando",
+        "routine_change": true,
+        "observed_behavior": ["irritabilidad"]
+      },
+      "notes": null,
+      "source_observation": {
+        "input_type": "TEXT",
+        "observation_draft_id": "draft_001",
+        "source_text": "Anoche se despertó varias veces, hoy despertó irritable y cambiarán la sala."
+      },
+      "record_version": 1,
+      "supersedes_record_id": null
+    },
+    {
+      "record_id": "DR-00412",
+      "child_id": "CH-002",
+      "recorded_at": "2026-08-26T07:40:00-04:00",
+      "source": "FAMILY",
+      "persistence_status": "PERSISTED",
+      "risk_recalculation_requested": true,
+      "risk_recalculation_request_id": "RCR-00931"
     }
-  }
+  ]
 }

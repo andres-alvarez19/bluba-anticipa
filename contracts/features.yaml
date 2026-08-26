@@ -1,106 +1,893 @@
-version: 1
-note: >-
-  Registro conceptual de features. El mapping exacto a columnas del dataset real
-  debe provenir de DATA-01; no inferir nombres de columnas desde este archivo.
+# Bluba Anticipa — Feature Catalog / Feature Engineering Contract
+# MVP NeuroHack 2026
+#
+# This file versions the semantic meaning of the inputs consumed by the prediction engine.
+# It is intentionally independent from transport (OpenAPI) and from the implementation of
+# the risk algorithm. Any prediction that uses this catalog must emit:
+#   feature_schema_version: features-mvp-v1
 
-raw_features:
-  sleep_hours:
-    type: numeric
-    unit: hours
-    nullable: true
-    source_contexts: [family]
-  sleep_quality:
-    type: categorical
-    nullable: true
-    categories: [good, regular, poor, interrupted, unknown]
-    source_contexts: [family]
+catalog:
+  name: bluba-anticipa-features
+  contract_version: 0.1.0
+  feature_schema_version: features-mvp-v1
+  status: mvp_demo
+  language: en
+  naming_convention: snake_case
+  score_scale: 0_to_1
+  purpose: >-
+    Define canonical direct features, longitudinal/derived features, temporal windows,
+    missing-data semantics, data-quality inputs, anti-leakage constraints and the target
+    definition shared by Backend and Data/ML.
+  disclaimer: >-
+    Windows, mappings and formulas marked provisional_mvp are engineering parameters for the
+    NeuroHack prototype. They are not clinically validated thresholds, causal relationships or
+    evidence of predictive performance.
+
+references:
+  prediction_contract: ./prediction.schema.json
+  daily_record_contract: ./daily-record.schema.json
+  event_contract: ./event.schema.json
+  recommendation_contract: ./recommendation.schema.json
+
+invariants:
+  cutoff_rule:
+    expression: source_timestamp <= prediction_at
+    mandatory: true
+    description: >-
+      Every observation used to construct a feature must have been known at or before the
+      prediction cutoff. Information produced after the cutoff is forbidden for that prediction.
+  longitudinal_unit:
+    value: child
+    description: Baselines and temporal features are calculated per child, not globally.
+  missing_is_not_normal:
+    mandatory: true
+    unknown_tokens:
+      - null
+      - desconocido
+    description: Missing/unknown observations must never be silently converted into normal states.
+  target_is_not_regulation_level:
+    mandatory: true
+    description: >-
+      regulation_level=desregulacion_frecuente is a contextual/historical feature and is not the
+      prediction target. The target is built only from confirmed DysregulationEvent records.
+  deterministic_versioning:
+    mandatory: true
+    description: >-
+      The same canonical history, prediction_at, feature_schema_version and implementation version
+      must produce the same deterministic features.
+
+windows:
+  current:
+    id: current
+    purpose: current_state
+    selection: latest_valid_observation_known_at_cutoff
+    cutoff_inclusive: true
+  accumulation_3d:
+    id: 3d
+    purpose: recent_accumulation
+    duration_hours: 72
+    interval: "(prediction_at - 72h, prediction_at]"
+  event_history_7d:
+    id: 7d
+    purpose: recent_dysregulation_history
+    duration_days: 7
+    interval: "(prediction_at - 7d, prediction_at]"
+  baseline_14d:
+    id: baseline_14d
+    purpose: individual_baseline
+    target_valid_days: 14
+    provisional_min_valid_days: 7
+    sufficient_history_days: 14
+    exclude_recent_hours: 72
+    exclude_recent_policy: preferred_for_mvp
+    selection: last_valid_days_before_recent_window
+    numeric_summary:
+      preferred_center: median
+      preferred_dispersion: robust_dispersion
+    categorical_summary:
+      preferred_statistics:
+        - mode
+        - frequency_distribution
+    description: >-
+      Product specification defines a provisional baseline from 7 valid days and higher-confidence
+      baseline from 14 valid days. The last 72 hours should preferably be separated from the
+      baseline so recent deterioration is not absorbed by the reference window.
+  target_24h:
+    id: target_24h
+    purpose: supervised_target_only
+    duration_hours: 24
+    interval: "(prediction_at, prediction_at + 24h]"
+
+canonical_name_mapping:
+  calidad_sueno: sleep_quality
+  horas_sueno: sleep_hours
+  estado_despertar: wake_state
+  nivel_regulacion: regulation_level
+  nivel_alerta: alert_level
+  cambio_rutina: routine_change
+  estado_gastrointestinal: gastrointestinal_status
+  comportamiento_observado: observed_behavior
+  evento_excepcional: exceptional_event
+  perfil_sensorial: sensory_profile
+  eventos_desregulacion_7d: dysregulation_events_7d
+  desregulacion_proximas_24h: target_dysregulation_24h
+
+feature_sets:
+  prediction_engine_input_v0_1:
+    direct:
+      - sleep_quality
+      - sleep_hours
+      - wake_state
+      - regulation_level
+      - alert_level
+      - routine_change
+      - gastrointestinal_status
+      - observed_behavior
+      - exceptional_event
+      - sensory_profile
+    derived_required:
+      - sleep_altered_days_3d
+      - sleep_baseline_deviation_14d
+      - wake_adverse_days_3d
+      - low_regulation_days_3d
+      - regulation_trend_3d
+      - dysregulation_events_7d
+      - days_since_last_dysregulation
+      - adverse_factor_count_current
+      - relevant_trigger_exposure
+      - alert_outside_optimal
+    data_quality:
+      - completeness
+      - critical_present
+      - critical_total
+      - hours_since_last_record
+      - history_days
+      - sources
+      - missing_fields
+      - missing_critical_data
+      - contains_synthetic_data
+  synthetic_dataset_materialized_extensions:
+    description: >-
+      Features present in the synthetic ML dataset and useful for QA/experimentation, but not
+      required by prediction.schema.json v0.1.0.
+    derived_optional:
+      - routine_changes_3d
+      - gi_alterations_3d
+      - exceptional_events_3d
+  future_extensions:
+    description: Defined by the predictive specification but not transported by v0.1.0.
+    derived_optional:
+      - alert_direction
+
+critical_state_groups:
+  sleep:
+    priority: 1
+    present_when: >-
+      (sleep_quality is known and not desconocido) OR (sleep_hours is not null)
+    member_features:
+      - sleep_quality
+      - sleep_hours
   wake_state:
-    type: categorical
-    nullable: true
-    categories: [calm, irritable, tired, alert, other, unknown]
-    source_contexts: [family]
-  start_day_support_level:
-    type: ordinal
-    nullable: true
-    categories: [low, medium, high, unknown]
-    source_contexts: [family, school]
-  gastrointestinal_status:
-    type: categorical
-    nullable: true
-    categories: [usual, altered, pain_or_discomfort, other, unknown]
-    source_contexts: [family, professional]
-  diet_change:
-    type: boolean
-    nullable: true
-    source_contexts: [family, school]
-  routine_change:
-    type: boolean
-    nullable: true
-    source_contexts: [family, school, professional]
-  observed_behavior:
-    type: categorical_or_text
-    nullable: true
-    source_contexts: [family, school, professional]
-  alertness:
-    type: ordinal
-    nullable: true
-    categories: [low, usual, high, unknown]
-    source_contexts: [family, school, professional]
-  regulation_state:
-    type: categorical
-    nullable: true
-    categories: [regulated, challenged, dysregulated, unknown]
-    source_contexts: [family, school, professional]
-  activity_participation:
-    type: categorical
-    nullable: true
-    categories: [usual, reduced, increased, not_applicable, unknown]
-    source_contexts: [school, professional]
-  social_interaction:
-    type: categorical_or_text
-    nullable: true
-    source_contexts: [family, school, professional]
-  meals_recess:
-    type: categorical_or_text
-    nullable: true
-    source_contexts: [school]
-  exceptional_event:
-    type: boolean
-    nullable: true
-    source_contexts: [family, school, professional]
+    priority: 2
+    present_when: wake_state is known and not desconocido
+    member_features:
+      - wake_state
+  regulation_or_behavior:
+    priority: 3
+    present_when: >-
+      (regulation_level is known and not desconocido) OR observed_behavior contains at least one tag
+    member_features:
+      - regulation_level
+      - observed_behavior
 
-outcome_features:
-  dysregulation_event:
-    type: boolean
-    description: Evento observado posteriormente; outcome para evaluación futura.
+high_value_context_features:
+  - routine_change
+  - alert_level
+  - exceptional_event
+  - gastrointestinal_status
+  # Participation/interactions are identified by the product specification as high-value context,
+  # but are not yet represented in prediction.schema.json v0.1.0.
+
+missing_data_policy:
+  preserve_unknown: true
+  allow_model_imputation: true
+  imputation_contract: >-
+    If an implementation imputes a model input, it must retain an explicit missingness indicator or
+    equivalent data-quality evidence. Imputation must not mutate the canonical observation.
+  insufficient_data_rules:
+    any_of:
+      - rule_id: missing_two_of_three_critical_groups
+        expression: missing_critical_groups >= 2
+      - rule_id: confidence_below_minimum
+        expression: confidence_score < 0.40
+      - rule_id: no_baseline_and_no_interpretable_recent_trend
+        expression: baseline_available == false AND recent_trend_interpretable == false
+        note: >-
+          The source specification requires a minimum interpretable recent trend but does not define
+          a numeric observation count. The boolean must therefore be produced by the FeatureBuilder
+          under a separately tested implementation rule; this catalog does not invent a threshold.
+  request_priority_order:
+    - sleep
+    - wake_state
+    - regulation_or_behavior
+
+baseline_availability:
+  unavailable:
+    condition: valid_history_days < 7
+  provisional:
+    condition: 7 <= valid_history_days < 14
+  sufficient:
+    condition: valid_history_days >= 14
+
+direct_features:
+  sleep_quality:
+    contract_path: features.sleep_quality
+    type: categorical_nullable
+    source_entities:
+      - DailyRecord.features.sleep_quality
+    current_value_strategy: latest_valid_known_at_cutoff
+    allowed_values:
+      - reparador
+      - interrumpido
+      - dificultad_conciliacion
+      - desconocido
+      - null
+    missing_values:
+      - desconocido
+      - null
+    baseline_eligible: true
+    critical_group: sleep
+    risk_input: true
+    adverse_predicate:
+      status: provisional_mvp
+      expression: sleep_quality in [interrumpido, dificultad_conciliacion]
+    notes: >-
+      No global clinical sleep threshold is implied. The primary interpretation is longitudinal
+      relative to the child's own baseline.
+
+  sleep_hours:
+    contract_path: features.sleep_hours
+    type: numeric_nullable
+    source_entities:
+      - DailyRecord.features.sleep_hours
+    current_value_strategy: latest_valid_known_at_cutoff
+    unit: hours
+    valid_range:
+      min: 0
+      max: 24
+    missing_values:
+      - null
+    baseline_eligible: true
+    critical_group: sleep
+    risk_input: true
+    adverse_predicate:
+      status: intentionally_not_global
+      expression: null
+      note: >-
+        The source documents do not define a universal adverse number of sleep hours. Use individual
+        deviation/baseline logic instead of inventing a population cutoff.
+
+  wake_state:
+    contract_path: features.wake_state
+    type: categorical_nullable
+    source_entities:
+      - DailyRecord.features.wake_state
+    current_value_strategy: latest_valid_known_at_cutoff
+    allowed_values:
+      - tranquilo_alegre
+      - irritable_llorando
+      - cansado_sueno
+      - desconocido
+      - null
+    missing_values:
+      - desconocido
+      - null
+    baseline_eligible: true
+    critical_group: wake_state
+    risk_input: true
+    adverse_predicate:
+      status: provisional_mvp
+      expression: wake_state in [irritable_llorando, cansado_sueno]
+
+  regulation_level:
+    contract_path: features.regulation_level
+    type: categorical_nullable
+    source_entities:
+      - DailyRecord.features.regulation_level
+    current_value_strategy: latest_valid_known_at_cutoff
+    allowed_values:
+      - excelente
+      - estable_con_apoyo
+      - desregulacion_frecuente
+      - desconocido
+      - null
+    missing_values:
+      - desconocido
+      - null
+    baseline_eligible: true
+    critical_group: regulation_or_behavior
+    risk_input: true
+    target_feature: false
+    adverse_predicate:
+      status: provisional_mvp
+      expression: regulation_level == desregulacion_frecuente
+    notes: >-
+      This variable may describe daily regulation but must never be substituted for the confirmed
+      24-hour DysregulationEvent target.
+
+  alert_level:
+    contract_path: features.alert_level
+    type: categorical_nullable
+    source_entities:
+      - DailyRecord.features.alert_level
+      - ProfessionalSession.alert_level_if_available
+    current_value_strategy: latest_valid_known_at_cutoff
+    allowed_values:
+      - bajo
+      - optimo
+      - alto
+      - desconocido
+      - null
+    missing_values:
+      - desconocido
+      - null
+    baseline_eligible: true
+    risk_input: true
+    ordinal: false
+    notes: Both bajo and alto may represent deviation from the optimal state.
+
+  routine_change:
+    contract_path: features.routine_change
+    type: boolean_nullable
+    source_entities:
+      - DailyRecord.features.routine_change
+    current_value_strategy: latest_valid_known_at_cutoff
+    missing_values:
+      - null
+    baseline_eligible: false
+    risk_input: true
+    adverse_predicate:
+      status: provisional_mvp
+      expression: routine_change == true
+
+  gastrointestinal_status:
+    contract_path: features.gastrointestinal_status
+    type: categorical_nullable_open_vocabulary
+    source_entities:
+      - DailyRecord.features.gastrointestinal_status
+    current_value_strategy: latest_valid_known_at_cutoff
+    missing_values:
+      - null
+      - desconocido
+    baseline_eligible: true
+    risk_input: true
+    vocabulary_status: open_decision
+    notes: >-
+      The current contracts intentionally leave the exact gastrointestinal enum open. Do not encode
+      an unvalidated causal interpretation; treat it as contextual evidence relative to history.
+
+  observed_behavior:
+    contract_path: features.observed_behavior
+    type: tag_list
+    source_entities:
+      - DailyRecord.features.observed_behavior
+    current_value_strategy: merge_unique_tags_known_at_cutoff
+    missing_values:
+      - empty_list
+    baseline_eligible: true
+    critical_group: regulation_or_behavior
+    risk_input: true
+    vocabulary_status: open_decision
+    notes: >-
+      Tags may originate from structured capture or human-confirmed NLP extraction. No unrestricted
+      LLM output may be treated as confirmed observation.
+
+  exceptional_event:
+    contract_path: features.exceptional_event
+    type: boolean_nullable
+    source_entities:
+      - DailyRecord.features.exceptional_event
+    current_value_strategy: latest_valid_known_at_cutoff
+    missing_values:
+      - null
+    baseline_eligible: false
+    risk_input: true
+    adverse_predicate:
+      status: provisional_mvp
+      expression: exceptional_event == true
+
+  sensory_profile:
+    contract_path: features.sensory_profile
+    type: tag_list
+    source_entities:
+      - Child.sensory_profile
+      - DailyRecord.features.sensory_profile_snapshot
+    current_value_strategy: latest_profile_known_at_cutoff
+    missing_values:
+      - empty_list
+    baseline_eligible: false
+    personalization_input: true
+    risk_input: true
+    example_tags:
+      - hipersensibilidad_auditiva
+      - evitacion_tactil
+    notes: >-
+      Prefer the Child profile as the source of truth. A DailyRecord sensory_profile_snapshot is only
+      contextual provenance, not a request to re-enter the profile every day.
 
 derived_features:
   sleep_altered_days_3d:
+    contract_path: derived.sleep_altered_days_3d
     type: integer
     window: 3d
-    depends_on: [sleep_quality]
-  sleep_deviation_vs_baseline:
-    type: numeric
-    depends_on: [sleep_hours, sleep_quality]
-    note: Método de normalización a validar con datos longitudinales.
-  regulation_trend_3d:
-    type: numeric
+    range:
+      min: 0
+      max: 3
+    dependencies:
+      - sleep_quality
+    formula_status: provisional_mvp
+    formula: >-
+      Count distinct local dates in the 72-hour window whose canonical sleep_quality satisfies the
+      sleep_quality.adverse_predicate. Unknown/missing days do not count as normal or adverse.
+    factor_code: SLEEP_ALTERED_3D
+    factor_type: ACCUMULATION
+
+  sleep_baseline_deviation_14d:
+    contract_path: derived.sleep_baseline_deviation_14d
+    type: numeric_nullable
+    window:
+      recent: 3d
+      baseline: baseline_14d
+    dependencies:
+      - sleep_quality
+    formula_status: provisional_mvp
+    formula: >-
+      recent_altered_rate_3d - baseline_altered_rate_14d, using only known valid observations.
+      Return null when either rate cannot be estimated from sufficient valid observations.
+    expected_range:
+      min: -1.0
+      max: 1.0
+    interpretation:
+      positive: recent sleep is more altered than the child's baseline
+      zero: similar altered-sleep rate
+      negative: recent sleep is less altered than baseline
+    factor_code: SLEEP_BASELINE_DEVIATION
+    factor_type: DEVIATION
+
+  wake_adverse_days_3d:
+    contract_path: derived.wake_adverse_days_3d
+    type: integer
     window: 3d
-    depends_on: [regulation_state]
-  routine_changes_7d:
+    range:
+      min: 0
+      max: 3
+    dependencies:
+      - wake_state
+    formula_status: provisional_mvp
+    formula: >-
+      Count distinct local dates in the 72-hour window whose canonical wake_state satisfies the
+      wake_state.adverse_predicate. Unknown/missing days are excluded from the count.
+    factor_code: WAKE_ADVERSE_3D
+    factor_type: ACCUMULATION
+
+  low_regulation_days_3d:
+    contract_path: derived.low_regulation_days_3d
+    type: integer
+    window: 3d
+    range:
+      min: 0
+      max: 3
+    dependencies:
+      - regulation_level
+    formula_status: provisional_mvp
+    formula: >-
+      Count distinct local dates in the 72-hour window whose canonical regulation_level equals
+      desregulacion_frecuente. Unknown/missing days are excluded.
+    factor_code: LOW_REGULATION_3D
+    factor_type: ACCUMULATION
+
+  regulation_trend_3d:
+    contract_path: derived.regulation_trend_3d
+    type: numeric_nullable
+    window: 3d
+    dependencies:
+      - regulation_level
+    formula_status: provisional_mvp
+    ordinal_encoding:
+      excelente: 2
+      estable_con_apoyo: 1
+      desregulacion_frecuente: 0
+      desconocido: null
+    formula: >-
+      Fit a simple least-squares slope over valid day-level ordinal regulation values in chronological
+      order and divide the slope by 2 so the value is expressed relative to the full ordinal range.
+      Return null when fewer than two valid day-level observations exist.
+    interpretation:
+      positive: improving regulation trend
+      zero: stable trend
+      negative: worsening regulation trend
+    factor_code: REGULATION_TREND_3D
+    factor_type: DEVIATION
+
+  dysregulation_events_7d:
+    contract_path: derived.dysregulation_events_7d
     type: integer
     window: 7d
-    depends_on: [routine_change]
-  adverse_factor_count_current:
-    type: integer
-    depends_on: [sleep_quality, wake_state, gastrointestinal_status, routine_change, alertness, regulation_state]
+    dependencies:
+      - DysregulationEvent.occurred_at
+      - DysregulationEvent.event_type
+    formula_status: defined
+    formula: >-
+      Count confirmed events for the same child with event_type == DYSREGULATION and occurred_at in
+      (prediction_at - 7 days, prediction_at]. ESCALATION events do not count toward this feature.
+    factor_code: DYSREGULATION_HISTORY_7D
+    factor_type: HISTORY
+
   days_since_last_dysregulation:
-    type: numeric
+    contract_path: derived.days_since_last_dysregulation
+    type: numeric_nullable
     unit: days
-    depends_on: [dysregulation_event]
-  missing_critical_feature_count:
+    dependencies:
+      - DysregulationEvent.occurred_at
+      - DysregulationEvent.event_type
+    formula_status: defined
+    formula: >-
+      (prediction_at - max(occurred_at)) / 24 hours for the latest confirmed DYSREGULATION event with
+      occurred_at <= prediction_at. Return null if no prior confirmed event exists.
+    factor_code: DAYS_SINCE_LAST_DYSREGULATION
+    factor_type: HISTORY
+
+  adverse_factor_count_current:
+    contract_path: derived.adverse_factor_count_current
     type: integer
-    purpose: confidence
-  source_coverage_count:
+    window: current
+    dependencies:
+      - sleep_quality
+      - wake_state
+      - regulation_level
+      - routine_change
+      - exceptional_event
+      - alert_outside_optimal
+      - relevant_trigger_exposure
+    formula_status: provisional_mvp
+    formula: >-
+      Count the true current adverse predicates for known evidence only: altered sleep, adverse wake
+      state, frequent dysregulation level, routine change, exceptional event, alert outside optimal
+      and relevant trigger exposure. Missing direct values do not contribute; their absence is
+      reflected in data_quality instead.
+    notes: >-
+      gastrointestinal_status and observed_behavior are not counted until their controlled
+      vocabularies/adverse mappings are closed, avoiding invented semantics.
+    factor_code: MULTIFACTOR_ACCUMULATION
+    factor_type: CONTEXT
+
+  relevant_trigger_exposure:
+    contract_path: derived.relevant_trigger_exposure
+    type: boolean
+    window: current
+    dependencies:
+      - sensory_profile
+      - exceptional_event
+      - observed_behavior
+    formula_status: partially_specified
+    formula: >-
+      True only when information known before prediction_at contains structured contextual evidence
+      that matches a configured relevance mapping for the child's sensory/history profile. Never use
+      a trigger tag identified after the target event. False means no known matching exposure was
+      established from available evidence; missing context must still be reflected in data_quality.
+    mapping_status: open_decision
+    example: >-
+      sensory_profile contains hipersensibilidad_auditiva AND a pre-cutoff structured context tag
+      indicates ruido_intenso => true.
+    factor_code: RELEVANT_TRIGGER_EXPOSURE
+    factor_type: CONTEXT
+
+  alert_outside_optimal:
+    contract_path: derived.alert_outside_optimal
+    type: boolean
+    window: current
+    dependencies:
+      - alert_level
+    formula_status: defined
+    formula: alert_level in [bajo, alto]
+    missing_semantics: >-
+      For null/desconocido return false as 'no known evidence of outside-optimal alert', while the
+      missing direct feature remains explicit in data_quality. Do not interpret this as confirmed optimo.
+    factor_code: ALERT_OUTSIDE_OPTIMAL
+    factor_type: CONTEXT
+
+  routine_changes_3d:
+    transport_status: synthetic_dataset_extension_not_in_prediction_schema_v0_1
     type: integer
-    purpose: confidence
+    window: 3d
+    dependencies:
+      - routine_change
+    formula_status: defined
+    formula: Count distinct local dates in the 72-hour window with routine_change == true.
+
+  gi_alterations_3d:
+    transport_status: synthetic_dataset_extension_not_in_prediction_schema_v0_1
+    type: integer_nullable
+    window: 3d
+    dependencies:
+      - gastrointestinal_status
+    formula_status: pending_vocabulary
+    formula: null
+    note: >-
+      The synthetic dataset materializes this feature, but the normalized gastrointestinal vocabulary
+      is not closed in the current contracts. Do not invent the altered-state mapping here.
+
+  exceptional_events_3d:
+    transport_status: synthetic_dataset_extension_not_in_prediction_schema_v0_1
+    type: integer
+    window: 3d
+    dependencies:
+      - exceptional_event
+    formula_status: defined
+    formula: Count distinct local dates in the 72-hour window with exceptional_event == true.
+
+  alert_direction:
+    transport_status: future_extension_not_in_prediction_schema_v0_1
+    type: categorical_nullable
+    window: current
+    dependencies:
+      - alert_level
+    allowed_values:
+      - bajo
+      - alto
+      - null
+    formula_status: defined
+    formula: Return bajo or alto when alert_level is outside optimal; otherwise null.
+
+data_quality_features:
+  completeness:
+    contract_path: data_quality.completeness
+    type: number
+    range:
+      min: 0.0
+      max: 1.0
+    formula_status: implementation_configured
+    semantic_definition: Proportion of expected/relevant canonical inputs available for the snapshot.
+    note: >-
+      The source documents require completeness to affect confidence but do not define one universal
+      denominator for every role/context. The implementation must version the denominator and test it.
+
+  critical_present:
+    contract_path: data_quality.critical_present
+    type: integer
+    range:
+      min: 0
+      max: 3
+    formula_status: defined
+    formula: Count present critical_state_groups.
+
+  critical_total:
+    contract_path: data_quality.critical_total
+    type: integer
+    const: 3
+
+  hours_since_last_record:
+    contract_path: data_quality.hours_since_last_record
+    type: numeric_nullable
+    unit: hours
+    formula_status: defined
+    formula: >-
+      (prediction_at - max(source_timestamp of eligible confirmed observations)) in hours. Return null
+      when no eligible confirmed observation exists.
+
+  history_days:
+    contract_path: data_quality.history_days
+    type: integer
+    unit: valid_days
+    formula_status: defined
+    formula: Count valid individual history days available before prediction_at.
+
+  sources:
+    contract_path: data_quality.sources
+    type: set
+    allowed_values:
+      - FAMILY
+      - SCHOOL
+      - PROFESSIONAL
+    formula_status: defined
+    formula: Unique eligible record sources represented by confirmed information <= prediction_at.
+
+  missing_fields:
+    contract_path: data_quality.missing_fields
+    type: list
+    formula_status: defined
+    formula: List canonical fields that are null, desconocido, empty or unavailable as defined by each feature.
+
+  missing_critical_data:
+    contract_path: data_quality.missing_critical_data
+    type: list
+    formula_status: defined
+    formula: >-
+      Emit one item for each missing/stale critical group/member according to prediction.schema.json,
+      with priority derived from critical_state_groups.
+
+  contains_synthetic_data:
+    contract_path: data_quality.contains_synthetic_data
+    type: boolean
+    formula_status: defined
+    formula: True if any observation contributing to the snapshot is explicitly marked synthetic.
+
+confidence_engine:
+  independence_rule: confidence_does_not_modify_risk_band
+  output_scale:
+    min: 0.0
+    max: 1.0
+  demo_formula:
+    status: source_defined_weights_component_curves_open
+    expression: >-
+      confidence = critical_completeness*0.40 + record_recency*0.20 + source_coverage*0.15 +
+      history_depth*0.15 + record_consistency*0.10
+    components:
+      critical_completeness:
+        weight: 0.40
+        range: [0.0, 1.0]
+        suggested_basis: critical_present / critical_total
+        status: derivable_from_contract
+      record_recency:
+        weight: 0.20
+        range: [0.0, 1.0]
+        basis: hours_since_last_record
+        scoring_curve: null
+        status: not_numerically_specified_in_source
+      source_coverage:
+        weight: 0.15
+        range: [0.0, 1.0]
+        basis: sources
+        scoring_curve: null
+        status: not_numerically_specified_in_source
+      history_depth:
+        weight: 0.15
+        range: [0.0, 1.0]
+        basis: history_days
+        scoring_curve: null
+        status: not_numerically_specified_in_source
+      record_consistency:
+        weight: 0.10
+        range: [0.0, 1.0]
+        basis: cross_source_consistency
+        scoring_rule: null
+        status: not_numerically_specified_in_source
+  insufficient_data_confidence_threshold:
+    operator: "<"
+    value: 0.40
+
+factor_catalog:
+  SLEEP_ALTERED_3D:
+    source_feature: sleep_altered_days_3d
+    type: ACCUMULATION
+    default_label_es: Sueño alterado durante los últimos 3 días
+  SLEEP_BASELINE_DEVIATION:
+    source_feature: sleep_baseline_deviation_14d
+    type: DEVIATION
+    default_label_es: Sueño diferente respecto de su patrón habitual
+  WAKE_ADVERSE_3D:
+    source_feature: wake_adverse_days_3d
+    type: ACCUMULATION
+    default_label_es: Despertares adversos recientes
+  LOW_REGULATION_3D:
+    source_feature: low_regulation_days_3d
+    type: ACCUMULATION
+    default_label_es: Regulación más baja durante los últimos días
+  REGULATION_TREND_3D:
+    source_feature: regulation_trend_3d
+    type: DEVIATION
+    default_label_es: Tendencia reciente de regulación
+  DYSREGULATION_HISTORY_7D:
+    source_feature: dysregulation_events_7d
+    type: HISTORY
+    default_label_es: Desregulaciones registradas durante los últimos 7 días
+  DAYS_SINCE_LAST_DYSREGULATION:
+    source_feature: days_since_last_dysregulation
+    type: HISTORY
+    default_label_es: Tiempo desde la última desregulación registrada
+  MULTIFACTOR_ACCUMULATION:
+    source_feature: adverse_factor_count_current
+    type: CONTEXT
+    default_label_es: Coincidencia de varios factores adversos
+  RELEVANT_TRIGGER_EXPOSURE:
+    source_feature: relevant_trigger_exposure
+    type: CONTEXT
+    default_label_es: Contexto relevante para su perfil individual
+  ALERT_OUTSIDE_OPTIMAL:
+    source_feature: alert_outside_optimal
+    type: CONTEXT
+    default_label_es: Nivel de alerta fuera del rango óptimo
+  ROUTINE_CHANGE:
+    source_feature: routine_change
+    type: CONTEXT
+    default_label_es: Cambio de rutina reciente
+
+excluded_from_predictor:
+  trigger_after_event:
+    source_names:
+      - trigger_tags
+      - detonante_gatillante
+    reason: data_leakage_when_identified_after_event
+    allowed_use: historical_context_only_if_transformed_from_pre_cutoff_evidence
+  diagnosis:
+    source_names:
+      - diagnostico_principal
+    reason: zero_variance_in_current_real_dataset_and_not_selected_for_mvp
+  attendance_status:
+    source_names:
+      - estado_asistencia
+    reason: constant_in_available_sample
+  medication_adherence:
+    source_names:
+      - adherencia_medicacion
+    reason: may_act_as_identity_proxy_in_current_sample
+  synthetic_scenario_metadata:
+    source_names:
+      - scenario_id
+      - scenario_type
+    reason: qa_metadata_only
+  demo_scores:
+    source_names:
+      - risk_score_demo
+      - confidence_score_demo
+    reason: generated_demo_outputs_not_training_features
+  child_identifier:
+    source_names:
+      - child_id
+      - child_external_case_id
+    reason: identity_or_partition_key_not_predictive_feature
+    allowed_use:
+      - grouping
+      - temporal_partitioning
+      - evaluation_by_child
+
+target:
+  name: target_dysregulation_24h
+  spanish_alias: desregulacion_proximas_24h
+  type: boolean
+  source_entity: DysregulationEvent
+  eligible_event_type: DYSREGULATION
+  definition: >-
+    1 if at least one confirmed DYSREGULATION event for the same child satisfies
+    prediction_at < occurred_at <= prediction_at + 24 hours; otherwise 0.
+  interval: "(prediction_at, prediction_at + 24h]"
+  feature_input: false
+  operational_storage: >-
+    The target need not be permanently duplicated in the operational RiskPrediction table; it may
+    be materialized for training/evaluation datasets after the prediction window closes.
+
+anti_leakage_checks:
+  - id: no_future_daily_record
+    assertion: every contributing DailyRecord.recorded_at <= prediction_at
+  - id: no_future_professional_session
+    assertion: every contributing ProfessionalSession timestamp <= prediction_at
+  - id: no_target_event_as_feature
+    assertion: no DysregulationEvent with occurred_at > prediction_at contributes to input features
+  - id: no_post_event_trigger
+    assertion: trigger/context identified after a target event does not contribute to the prior prediction
+  - id: no_intervention_outcome_from_future
+    assertion: no Intervention or InterventionResult created/applied after prediction_at contributes to the prior prediction
+  - id: no_synthetic_qa_metadata
+    assertion: scenario_id and scenario_type are absent from the predictor input
+  - id: explicit_missingness
+    assertion: null/desconocido is not rewritten as a normal category during canonicalization
+
+validation_expectations:
+  prediction_schema_alignment:
+    required_direct_features_match: prediction.schema.json#/$defs/CanonicalDailyFeatures
+    required_derived_features_match: prediction.schema.json#/$defs/DerivedFeatures
+    feature_schema_version_value: features-mvp-v1
+  recommended_tests:
+    - same_input_same_version_same_features
+    - boundary_prediction_at_inclusive_for_features
+    - boundary_target_prediction_at_exclusive
+    - boundary_target_window_end_inclusive
+    - unknown_not_normal
+    - critical_group_sleep_accepts_quality_or_hours
+    - insufficient_when_two_critical_groups_missing
+    - insufficient_when_confidence_below_0_40
+    - baseline_unavailable_below_7_valid_days
+    - baseline_provisional_from_7_to_13_valid_days
+    - baseline_sufficient_at_14_valid_days
+    - escalation_event_not_counted_as_dysregulation_target
+    - scenario_metadata_never_reaches_predictor
