@@ -1,8 +1,8 @@
-import type { Prediction } from "@bluba/shared-types";
+import type { RiskPrediction } from "@bluba/api-client";
 
-export function formatPredictionState(prediction: Prediction): string {
-  if (prediction.status === "insufficient_data") {
+export function formatPredictionState(prediction: RiskPrediction): string {
+  if (prediction.status === "INSUFFICIENT_DATA") {
     return "insufficient_data";
   }
-  return prediction.risk.level;
+  return prediction.risk?.level ?? "unknown";
 }

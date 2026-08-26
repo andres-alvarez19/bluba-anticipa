@@ -1,4 +1,12 @@
-import type { DailyRecord, Prediction } from "@bluba/shared-types";
+import type { components } from "./generated/openapi";
+
+export type SessionResponse = components["schemas"]["SessionResponse"];
+export type ChildSummary = components["schemas"]["ChildSummary"];
+export type UserContext = components["schemas"]["UserContext"];
+export type DailyRecordCreateRequest = components["schemas"]["DailyRecordCreateRequest"];
+export type DailyRecordResponse = components["schemas"]["DailyRecordResponse"];
+export type RiskPrediction = components["schemas"]["RiskPrediction"];
+export type PreventiveStatus = components["schemas"]["PreventiveStatus"];
 
 export interface ApiClientOptions {
   baseUrl: string;
@@ -12,20 +20,29 @@ export function createApiClient({ baseUrl, fetcher = fetch }: ApiClientOptions) 
     async health(): Promise<{ status: "ok" }> {
       return request(fetcher, `${root}/health`);
     },
-    async createDailyRecord(record: DailyRecord): Promise<DailyRecord> {
-      return request(fetcher, `${root}/daily-records`, {
+    async createDemoSession(role: components["schemas"]["Role"]): Promise<SessionResponse> {
+      return request(fetcher, `${root}/v1/auth/session`, {
+        method: "POST",
+        body: JSON.stringify({ role })
+      });
+    },
+    async getMyContext(): Promise<UserContext> {
+      return request(fetcher, `${root}/v1/me/context`);
+    },
+    async listAuthorizedChildren(): Promise<ChildSummary[]> {
+      return request(fetcher, `${root}/v1/children`);
+    },
+    async createDailyRecord(childId: string, record: DailyRecordCreateRequest): Promise<DailyRecordResponse> {
+      return request(fetcher, `${root}/v1/children/${encodeURIComponent(childId)}/daily-records`, {
         method: "POST",
         body: JSON.stringify(record)
       });
     },
-    async createPrediction(subjectId: string, horizonHours = 24): Promise<Prediction> {
-      return request(fetcher, `${root}/subjects/${encodeURIComponent(subjectId)}/predictions`, {
-        method: "POST",
-        body: JSON.stringify({ horizon_hours: horizonHours })
-      });
+    async getCurrentRiskPrediction(childId: string): Promise<RiskPrediction> {
+      return request(fetcher, `${root}/v1/children/${encodeURIComponent(childId)}/risk-predictions/current`);
     },
-    async getLatestPrediction(subjectId: string): Promise<Prediction> {
-      return request(fetcher, `${root}/subjects/${encodeURIComponent(subjectId)}/predictions/latest`);
+    async getPreventiveStatus(childId: string): Promise<PreventiveStatus> {
+      return request(fetcher, `${root}/v1/children/${encodeURIComponent(childId)}/preventive-status`);
     }
   };
 }

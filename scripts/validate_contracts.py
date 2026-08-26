@@ -4,6 +4,8 @@ import json
 from pathlib import Path
 
 import yaml
+from jsonschema import Draft202012Validator
+from openapi_spec_validator import validate_spec
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -34,12 +36,7 @@ def validate_json_schemas() -> None:
         schema = _load_json(path)
         if not isinstance(schema, dict):
             raise AssertionError(f"{path} must contain a JSON object")
-        if schema.get("$schema") != "https://json-schema.org/draft/2020-12/schema":
-            raise AssertionError(f"{path} must declare JSON Schema draft 2020-12")
-        if schema.get("type") != "object":
-            raise AssertionError(f"{path} must define an object schema")
-        if "title" not in schema:
-            raise AssertionError(f"{path} must define a title")
+        Draft202012Validator.check_schema(schema)
 
 
 def validate_openapi() -> None:
@@ -50,9 +47,7 @@ def validate_openapi() -> None:
         raise AssertionError("contracts/openapi.yaml must contain a YAML object")
     if document.get("openapi") != "3.1.0":
         raise AssertionError("contracts/openapi.yaml must use OpenAPI 3.1.0")
-    for key in ("info", "paths"):
-        if key not in document:
-            raise AssertionError(f"contracts/openapi.yaml missing {key}")
+    validate_spec(document)
     for ref in _walk_refs(document):
         if ref.startswith("./"):
             target = CONTRACTS / ref[2:]

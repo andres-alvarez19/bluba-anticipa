@@ -10,7 +10,11 @@
     "lint": "node scripts/lint-workspace.mjs",
     "test": "node --test",
     "test:mobile": "npm --workspace apps/mobile run test",
-    "contracts": "python3 scripts/validate_contracts.py"
+    "contracts": "python3 scripts/validate_contracts.py",
+    "generate": "openapi-typescript contracts/openapi.yaml -o packages/api-client/src/generated/openapi.ts",
+    "generate:check": "npm run generate -- --check"
   },
-  "devDependencies": {}
+  "devDependencies": {
+    "openapi-typescript": "^7.0.0"
+  }
 }

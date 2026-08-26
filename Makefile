@@ -1,4 +1,4 @@
-.PHONY: setup dev mobile api predictor test test-mobile test-api test-model contracts lint eval
+.PHONY: setup dev mobile api predictor test test-mobile test-api test-model contracts generate generate-check lint eval
 
 PYTHON ?= python3
 PIP ?= $(PYTHON) -m pip
@@ -34,6 +34,12 @@ test-model:
 
 contracts:
 	$(PYTHON) scripts/validate_contracts.py
+
+generate:
+	npm run generate
+
+generate-check:
+	npm run generate:check
 
 lint:
 	npm run lint
