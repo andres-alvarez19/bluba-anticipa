@@ -126,25 +126,59 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
 }
 
 function PredictionDetails({ prediction }: { prediction: RiskPrediction }) {
+  const missingLabels = prediction.data_quality.missing_critical_data.length > 0
+    ? prediction.data_quality.missing_critical_data.map((item) => labelForField(item.field))
+    : prediction.data_quality.missing_fields.map(labelForField);
+
   return (
     <View style={styles.prediction}>
-      <Text style={styles.status}>{prediction.status}</Text>
-      <Text style={styles.value}>Confianza: {prediction.confidence.level}</Text>
-      <Text style={styles.value}>
-        Riesgo: {prediction.risk ? `${prediction.risk.level} (${prediction.risk.score})` : "No disponible"}
-      </Text>
-      <Text style={styles.label}>Datos faltantes</Text>
-      {prediction.data_quality.missing_fields.length > 0 ? (
-        prediction.data_quality.missing_fields.map((field) => (
-          <Text key={field} style={styles.listItem}>
-            - {field}
-          </Text>
-        ))
-      ) : (
-        <Text style={styles.value}>Sin datos faltantes reportados.</Text>
-      )}
+      <Text style={styles.status}>Estado de hoy</Text>
+      {prediction.status === "INSUFFICIENT_DATA" ? (
+        <Text style={styles.valueStrong}>Datos insuficientes para estimar riesgo</Text>
+      ) : null}
+      {prediction.risk ? (
+        <>
+          <Text style={styles.label}>Riesgo</Text>
+          <Text style={styles.valueStrong}>{prediction.risk.level}</Text>
+          <Text style={styles.value}>Indice demostrativo {prediction.risk.score}</Text>
+        </>
+      ) : null}
+      <Text style={styles.label}>Confianza</Text>
+      <Text style={styles.valueStrong}>{prediction.confidence.level}</Text>
+      {prediction.top_factors.length > 0 ? (
+        <>
+          <Text style={styles.label}>Principales factores</Text>
+          {prediction.top_factors.map((factor) => (
+            <Text key={factor.code} style={styles.listItem}>
+              - {factor.label}
+            </Text>
+          ))}
+        </>
+      ) : null}
+      {missingLabels.length > 0 ? (
+        <>
+          <Text style={styles.label}>Falta registrar</Text>
+          {missingLabels.map((field, index) => (
+            <Text key={`${field}-${index}`} style={styles.listItem}>
+              - {field}
+            </Text>
+          ))}
+        </>
+      ) : null}
     </View>
   );
+}
+
+function labelForField(field: string) {
+  const labels: Record<string, string> = {
+    sleep: "Sueño",
+    sleep_quality: "Sueño",
+    sleep_hours: "Sueño",
+    wake_state: "Estado al despertar",
+    regulation_level: "Regulación o conducta",
+    observed_behavior: "Regulación o conducta"
+  };
+  return labels[field] ?? field;
 }
 
 const styles = StyleSheet.create({
@@ -170,6 +204,11 @@ const styles = StyleSheet.create({
   },
   value: {
     fontSize: 16,
+    color: "#18332f"
+  },
+  valueStrong: {
+    fontSize: 18,
+    fontWeight: "700",
     color: "#18332f"
   },
   status: {

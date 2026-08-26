@@ -5,7 +5,7 @@ from os import environ
 from typing import Any
 from uuid import uuid4
 
-from sqlalchemy import DateTime, String, create_engine, select
+from sqlalchemy import DateTime, String, create_engine, delete, select
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, sessionmaker
@@ -23,6 +23,13 @@ class Base(DeclarativeBase):
 
 def _json_column_type() -> JSON:
     return JSON().with_variant(JSONB, "postgresql")
+
+
+def parse_domain_datetime(value: str) -> datetime:
+    parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=UTC)
+    return parsed
 
 
 class ChildModel(Base):
@@ -119,18 +126,40 @@ class SqlAlchemyStore:
             session.commit()
         return response
 
-    def latest_features(self, child_id: str) -> dict[str, Any]:
+    def delete_daily_records(self, child_id: str) -> None:
         with self.session_factory() as session:
-            model = session.scalars(
+            session.execute(delete(DailyRecordModel).where(DailyRecordModel.child_id == child_id))
+            session.commit()
+
+    def latest_features(self, child_id: str) -> dict[str, Any]:
+        model = self.latest_daily_record_before(child_id, datetime.now(UTC))
+        if model is None:
+            return {}
+        return dict(model.get("features") or {})
+
+    def list_daily_records(
+        self,
+        child_id: str,
+        from_at: datetime | None = None,
+        to_at: datetime | None = None,
+    ) -> list[dict[str, Any]]:
+        with self.session_factory() as session:
+            models = session.scalars(
                 select(DailyRecordModel)
                 .where(DailyRecordModel.child_id == child_id)
-                .order_by(DailyRecordModel.created_at.desc())
-                .limit(1)
-            ).first()
-            if model is None:
-                return {}
-            request = model.payload["request"]
-            return dict(request.get("features") or {})
+                .order_by(DailyRecordModel.recorded_at.asc())
+            ).all()
+        records = [dict(model.payload["request"]) for model in models]
+        return [
+            record
+            for record in records
+            if (from_at is None or parse_domain_datetime(record["recorded_at"]) > from_at)
+            and (to_at is None or parse_domain_datetime(record["recorded_at"]) <= to_at)
+        ]
+
+    def latest_daily_record_before(self, child_id: str, prediction_at: datetime) -> dict[str, Any] | None:
+        records = self.list_daily_records(child_id, to_at=prediction_at)
+        return records[-1] if records else None
 
     def add_event(self, child_id: str, event: dict[str, Any]) -> dict[str, Any]:
         event_id = f"event-{uuid4()}"
@@ -147,6 +176,24 @@ class SqlAlchemyStore:
             )
             session.commit()
         return payload
+
+    def list_dysregulation_events(
+        self,
+        child_id: str,
+        from_at: datetime | None = None,
+        to_at: datetime | None = None,
+    ) -> list[dict[str, Any]]:
+        with self.session_factory() as session:
+            models = session.scalars(
+                select(EventModel).where(EventModel.child_id == child_id).order_by(EventModel.occurred_at.asc())
+            ).all()
+        events = [dict(model.payload) for model in models]
+        return [
+            event
+            for event in events
+            if (from_at is None or parse_domain_datetime(event["occurred_at"]) > from_at)
+            and (to_at is None or parse_domain_datetime(event["occurred_at"]) <= to_at)
+        ]
 
     def set_latest_prediction(self, child_id: str, prediction: dict[str, Any]) -> None:
         with self.session_factory() as session:

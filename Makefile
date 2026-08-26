@@ -1,6 +1,6 @@
-.PHONY: setup dev mobile api predictor db-up db-down db-migrate typecheck test test-mobile test-api test-model contracts generate generate-check lint eval
+.PHONY: setup dev mobile api predictor seed-demo db-up db-down db-migrate typecheck test test-mobile test-api test-model contracts generate generate-check lint eval
 
-PYTHON ?= python3
+PYTHON ?= $(shell if [ -x .venv/bin/python ]; then printf ./.venv/bin/python; else printf python3; fi)
 PIP ?= $(PYTHON) -m pip
 ALEMBIC ?= $(shell if command -v alembic >/dev/null 2>&1; then command -v alembic; elif [ -x .venv/bin/alembic ]; then printf '../../.venv/bin/alembic'; else printf alembic; fi)
 
@@ -19,6 +19,9 @@ api:
 
 predictor:
 	$(PYTHON) -m bluba_predictor
+
+seed-demo:
+	$(PYTHON) scripts/seed_demo.py
 
 db-up:
 	docker compose up -d postgres

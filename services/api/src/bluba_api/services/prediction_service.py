@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from typing import Any
 
-from bluba_predictor import PredictionEngineInput, PredictionEngineOutput, predict
+from bluba_predictor import PredictionEngineOutput, predict
 
+from bluba_api.services.feature_builder import FeatureBuilder
 from bluba_api.store import SqlAlchemyStore
 
 
@@ -32,15 +34,14 @@ def to_risk_prediction(output: PredictionEngineOutput) -> RiskPrediction:
 class PredictionService:
     def __init__(self, store: SqlAlchemyStore) -> None:
         self.store = store
+        self.feature_builder = FeatureBuilder(store)
 
-    def evaluate_current(self, child_id: str) -> RiskPrediction:
-        output = predict(PredictionEngineInput(child_id=child_id, features=self.store.latest_features(child_id)))
+    def evaluate_current(self, child_id: str, prediction_at: datetime | None = None) -> RiskPrediction:
+        engine_input = self.feature_builder.build(child_id=child_id, prediction_at=prediction_at or datetime.now(UTC))
+        output = predict(engine_input)
         prediction = to_risk_prediction(output)
         self.store.set_latest_prediction(child_id, prediction)
         return prediction
 
     def latest_or_evaluate(self, child_id: str) -> RiskPrediction:
-        prediction = self.store.get_latest_prediction(child_id)
-        if prediction is not None:
-            return prediction
         return self.evaluate_current(child_id)
