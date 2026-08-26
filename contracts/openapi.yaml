@@ -1,0 +1,107 @@
+openapi: 3.1.0
+info:
+  title: Bluba Anticipa API
+  version: 0.1.0
+  description: Contract-first API surface for the mobile MVP.
+servers:
+  - url: http://localhost:8000
+paths:
+  /health:
+    get:
+      operationId: healthCheck
+      responses:
+        '200':
+          description: Service healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status]
+                properties:
+                  status:
+                    type: string
+                    const: ok
+  /daily-records:
+    post:
+      operationId: createDailyRecord
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: './daily-record.schema.json'
+      responses:
+        '201':
+          description: Record accepted
+          content:
+            application/json:
+              schema:
+                $ref: './daily-record.schema.json'
+        '422':
+          description: Invalid record
+  /subjects/{subject_id}/predictions:
+    post:
+      operationId: createPrediction
+      parameters:
+        - in: path
+          name: subject_id
+          required: true
+          schema: {type: string}
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                horizon_hours:
+                  type: integer
+                  minimum: 1
+                  maximum: 168
+                  default: 24
+      responses:
+        '200':
+          description: Prediction generated
+          content:
+            application/json:
+              schema:
+                $ref: './prediction.schema.json'
+  /subjects/{subject_id}/predictions/latest:
+    get:
+      operationId: getLatestPrediction
+      parameters:
+        - in: path
+          name: subject_id
+          required: true
+          schema: {type: string}
+      responses:
+        '200':
+          description: Latest prediction
+          content:
+            application/json:
+              schema:
+                $ref: './prediction.schema.json'
+        '404':
+          description: No prediction found
+  /subjects/{subject_id}/events:
+    post:
+      operationId: createDysregulationEvent
+      parameters:
+        - in: path
+          name: subject_id
+          required: true
+          schema: {type: string}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: './event.schema.json'
+      responses:
+        '201':
+          description: Event accepted
+          content:
+            application/json:
+              schema:
+                $ref: './event.schema.json'

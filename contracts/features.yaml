@@ -1,0 +1,106 @@
+version: 1
+note: >-
+  Registro conceptual de features. El mapping exacto a columnas del dataset real
+  debe provenir de DATA-01; no inferir nombres de columnas desde este archivo.
+
+raw_features:
+  sleep_hours:
+    type: numeric
+    unit: hours
+    nullable: true
+    source_contexts: [family]
+  sleep_quality:
+    type: categorical
+    nullable: true
+    categories: [good, regular, poor, interrupted, unknown]
+    source_contexts: [family]
+  wake_state:
+    type: categorical
+    nullable: true
+    categories: [calm, irritable, tired, alert, other, unknown]
+    source_contexts: [family]
+  start_day_support_level:
+    type: ordinal
+    nullable: true
+    categories: [low, medium, high, unknown]
+    source_contexts: [family, school]
+  gastrointestinal_status:
+    type: categorical
+    nullable: true
+    categories: [usual, altered, pain_or_discomfort, other, unknown]
+    source_contexts: [family, professional]
+  diet_change:
+    type: boolean
+    nullable: true
+    source_contexts: [family, school]
+  routine_change:
+    type: boolean
+    nullable: true
+    source_contexts: [family, school, professional]
+  observed_behavior:
+    type: categorical_or_text
+    nullable: true
+    source_contexts: [family, school, professional]
+  alertness:
+    type: ordinal
+    nullable: true
+    categories: [low, usual, high, unknown]
+    source_contexts: [family, school, professional]
+  regulation_state:
+    type: categorical
+    nullable: true
+    categories: [regulated, challenged, dysregulated, unknown]
+    source_contexts: [family, school, professional]
+  activity_participation:
+    type: categorical
+    nullable: true
+    categories: [usual, reduced, increased, not_applicable, unknown]
+    source_contexts: [school, professional]
+  social_interaction:
+    type: categorical_or_text
+    nullable: true
+    source_contexts: [family, school, professional]
+  meals_recess:
+    type: categorical_or_text
+    nullable: true
+    source_contexts: [school]
+  exceptional_event:
+    type: boolean
+    nullable: true
+    source_contexts: [family, school, professional]
+
+outcome_features:
+  dysregulation_event:
+    type: boolean
+    description: Evento observado posteriormente; outcome para evaluación futura.
+
+derived_features:
+  sleep_altered_days_3d:
+    type: integer
+    window: 3d
+    depends_on: [sleep_quality]
+  sleep_deviation_vs_baseline:
+    type: numeric
+    depends_on: [sleep_hours, sleep_quality]
+    note: Método de normalización a validar con datos longitudinales.
+  regulation_trend_3d:
+    type: numeric
+    window: 3d
+    depends_on: [regulation_state]
+  routine_changes_7d:
+    type: integer
+    window: 7d
+    depends_on: [routine_change]
+  adverse_factor_count_current:
+    type: integer
+    depends_on: [sleep_quality, wake_state, gastrointestinal_status, routine_change, alertness, regulation_state]
+  days_since_last_dysregulation:
+    type: numeric
+    unit: days
+    depends_on: [dysregulation_event]
+  missing_critical_feature_count:
+    type: integer
+    purpose: confidence
+  source_coverage_count:
+    type: integer
+    purpose: confidence
