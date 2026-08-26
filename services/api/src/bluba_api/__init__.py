@@ -1,3 +1,3 @@
-from .store import InMemoryStore, SqlAlchemyStore
+from .store import SqlAlchemyStore
 
-__all__ = ["InMemoryStore", "SqlAlchemyStore"]
+__all__ = ["SqlAlchemyStore"]

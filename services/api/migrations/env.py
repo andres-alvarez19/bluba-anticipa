@@ -15,7 +15,7 @@ if config.config_file_name is not None:
 
 config.set_main_option(
     "sqlalchemy.url",
-    environ.get("DATABASE_URL", "postgresql+psycopg://bluba:bluba@localhost:5432/bluba_anticipa"),
+    environ.get("DATABASE_URL", "postgresql+psycopg://bluba:bluba@localhost:5432/bluba_anticipa").replace("%", "%%"),
 )
 target_metadata = Base.metadata
 

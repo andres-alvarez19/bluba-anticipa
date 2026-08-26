@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from collections import defaultdict
 from datetime import UTC, datetime
 from os import environ
 from typing import Any
@@ -22,10 +21,16 @@ class Base(DeclarativeBase):
     pass
 
 
-def _json_column_type(url: str) -> JSON:
-    if url.startswith("postgresql"):
-        return JSONB
-    return JSON
+def _json_column_type() -> JSON:
+    return JSON().with_variant(JSONB, "postgresql")
+
+
+class ChildModel(Base):
+    __tablename__ = "children"
+
+    id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    display_name: Mapped[str] = mapped_column(String(160), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
 class DailyRecordModel(Base):
@@ -34,7 +39,7 @@ class DailyRecordModel(Base):
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
     child_id: Mapped[str] = mapped_column(String(128), index=True, nullable=False)
     recorded_at: Mapped[str] = mapped_column(String(64), nullable=False)
-    payload: Mapped[dict[str, Any]] = mapped_column(_json_column_type(default_database_url()), nullable=False)
+    payload: Mapped[dict[str, Any]] = mapped_column(_json_column_type(), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
@@ -44,7 +49,7 @@ class PredictionModel(Base):
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
     child_id: Mapped[str] = mapped_column(String(128), index=True, nullable=False)
     prediction_at: Mapped[str] = mapped_column(String(64), nullable=False)
-    payload: Mapped[dict[str, Any]] = mapped_column(_json_column_type(default_database_url()), nullable=False)
+    payload: Mapped[dict[str, Any]] = mapped_column(_json_column_type(), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
@@ -54,7 +59,7 @@ class EventModel(Base):
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
     child_id: Mapped[str] = mapped_column(String(128), index=True, nullable=False)
     occurred_at: Mapped[str] = mapped_column(String(64), nullable=False)
-    payload: Mapped[dict[str, Any]] = mapped_column(_json_column_type(default_database_url()), nullable=False)
+    payload: Mapped[dict[str, Any]] = mapped_column(_json_column_type(), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
@@ -71,6 +76,24 @@ class SqlAlchemyStore:
 
     def create_schema(self) -> None:
         Base.metadata.create_all(self.engine)
+
+    def add_child(self, child_id: str, display_name: str) -> dict[str, Any]:
+        with self.session_factory() as session:
+            model = ChildModel(id=child_id, display_name=display_name, created_at=datetime.now(UTC))
+            session.merge(model)
+            session.commit()
+        return {"id": child_id, "display_name": display_name, "relationship_contexts": ["HOME"]}
+
+    def ensure_demo_child(self) -> dict[str, Any]:
+        return self.add_child("child-demo-1", "Niño demo")
+
+    def list_children(self) -> list[dict[str, Any]]:
+        with self.session_factory() as session:
+            children = session.scalars(select(ChildModel).order_by(ChildModel.created_at.asc())).all()
+            return [
+                {"id": child.id, "display_name": child.display_name, "relationship_contexts": ["HOME"]}
+                for child in children
+            ]
 
     def add_daily_record(self, child_id: str, record: dict[str, Any]) -> dict[str, Any]:
         record_id = f"daily-record-{uuid4()}"
@@ -147,28 +170,3 @@ class SqlAlchemyStore:
                 .limit(1)
             ).first()
             return None if model is None else dict(model.payload)
-
-
-class InMemoryStore:
-    def __init__(self) -> None:
-        self._daily_records: dict[str, list[dict[str, Any]]] = defaultdict(list)
-        self._events: dict[str, list[dict[str, Any]]] = defaultdict(list)
-        self._latest_predictions: dict[str, dict[str, Any]] = {}
-
-    def add_daily_record(self, record: dict[str, Any]) -> None:
-        key = record.get("subject_id") or record.get("child_id")
-        self._daily_records[key].append(record)
-
-    def latest_observations(self, subject_id: str) -> list[dict[str, Any]]:
-        if not self._daily_records[subject_id]:
-            return []
-        return list(self._daily_records[subject_id][-1].get("observations", []))
-
-    def add_event(self, event: dict[str, Any]) -> None:
-        self._events[event["subject_id"]].append(event)
-
-    def set_latest_prediction(self, subject_id: str, prediction: dict[str, Any]) -> None:
-        self._latest_predictions[subject_id] = prediction
-
-    def get_latest_prediction(self, subject_id: str) -> dict[str, Any] | None:
-        return self._latest_predictions.get(subject_id)
