@@ -1,12 +1,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any, TypedDict
 from uuid import uuid4
 
 
-class PredictionDict(TypedDict):
+class PredictionEngineOutput(TypedDict):
     prediction_id: str
     child_id: str
     prediction_at: str
@@ -24,14 +24,16 @@ class PredictionDict(TypedDict):
 
 
 @dataclass(frozen=True)
-class PredictionInput:
+class PredictionEngineInput:
     child_id: str
     horizon_hours: int = 24
+    prediction_at: str | None = None
     features: dict[str, Any] = field(default_factory=dict)
-    observations: list[dict[str, Any]] = field(default_factory=list)
+    derived: dict[str, Any] = field(default_factory=dict)
+    data_quality: dict[str, Any] = field(default_factory=dict)
 
 
-def predict(payload: PredictionInput) -> PredictionDict:
+def predict(payload: PredictionEngineInput) -> PredictionEngineOutput:
     """Return an explicit no-model MVP prediction without fabricating risk."""
     if payload.horizon_hours < 1 or payload.horizon_hours > 168:
         raise ValueError("horizon_hours must be between 1 and 168")
@@ -48,13 +50,14 @@ def predict(payload: PredictionInput) -> PredictionDict:
         for feature in ("sleep_quality", "regulation_level", "routine_change")
         if feature not in observed_features
     )
-    now = datetime.now(UTC).isoformat()
+    prediction_at = payload.prediction_at or datetime.now(UTC).isoformat()
+    window_end_at = (datetime.fromisoformat(prediction_at) + timedelta(hours=payload.horizon_hours)).isoformat()
 
     return {
         "prediction_id": f"prediction-{uuid4()}",
         "child_id": payload.child_id,
-        "prediction_at": now,
-        "window_end_at": now,
+        "prediction_at": prediction_at,
+        "window_end_at": window_end_at,
         "horizon_hours": payload.horizon_hours,
         "model_version": "mock-deterministic-mvp",
         "feature_schema_version": "features-mvp-v1",

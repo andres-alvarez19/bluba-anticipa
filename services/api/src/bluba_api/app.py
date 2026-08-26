@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import Any
 
-from bluba_predictor import PredictionInput, predict
+from bluba_predictor import PredictionEngineInput, predict
 
 from .store import SqlAlchemyStore
 
@@ -28,7 +28,7 @@ def create_app() -> Any:
     @app.post("/v1/auth/session")
     def create_demo_session(body: dict[str, Any]) -> dict[str, Any]:
         role = body.get("role")
-        if role not in {"FAMILY", "EDUCATION", "PROFESSIONAL", "ADMIN"}:
+        if role not in {"FAMILY", "EDUCATOR", "PROFESSIONAL"}:
             raise HTTPException(status_code=400, detail="invalid role")
         return {
             "access_token": f"demo-token-{role.lower()}",
@@ -55,7 +55,7 @@ def create_app() -> Any:
     @app.post("/v1/children/{child_id}/daily-records", status_code=201)
     def create_daily_record(child_id: str, record: dict[str, Any]) -> dict[str, Any]:
         response = store.add_daily_record(child_id, record)
-        prediction = predict(PredictionInput(child_id=child_id, features=store.latest_features(child_id)))
+        prediction = predict(PredictionEngineInput(child_id=child_id, features=store.latest_features(child_id)))
         store.set_latest_prediction(child_id, prediction)
         return response
 
@@ -67,10 +67,12 @@ def create_app() -> Any:
             raise HTTPException(status_code=400, detail="child_id is required")
         horizon_hours = int((body or {}).get("horizon_hours", 24))
         prediction = predict(
-            PredictionInput(
+            PredictionEngineInput(
                 child_id=child_id,
                 horizon_hours=horizon_hours,
                 features=dict(body.get("features") or store.latest_features(child_id)),
+                derived=dict(body.get("derived") or {}),
+                data_quality=dict(body.get("data_quality") or {}),
             )
         )
         store.set_latest_prediction(child_id, prediction)
@@ -80,7 +82,7 @@ def create_app() -> Any:
     def get_current_risk_prediction(child_id: str) -> dict[str, Any]:
         prediction = store.get_latest_prediction(child_id)
         if prediction is None:
-            prediction = predict(PredictionInput(child_id=child_id, features=store.latest_features(child_id)))
+            prediction = predict(PredictionEngineInput(child_id=child_id, features=store.latest_features(child_id)))
             store.set_latest_prediction(child_id, prediction)
         return prediction
 

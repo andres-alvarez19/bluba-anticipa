@@ -1,8 +1,8 @@
-from .engine import PredictionInput, predict
+from .engine import PredictionEngineInput, predict
 
 
 def main() -> None:
-    prediction = predict(PredictionInput(subject_id="demo-subject"))
+    prediction = predict(PredictionEngineInput(child_id="demo-child"))
     print(prediction["status"])
 
 
