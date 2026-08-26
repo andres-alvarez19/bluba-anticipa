@@ -1,0 +1,15 @@
+name: bugfix
+version: 1
+steps:
+  - identify_owner_role
+  - reproduce_bug
+  - identify_broken_invariant_or_contract
+  - add_failing_regression_test
+  - implement_smallest_fix
+  - run_regression_test
+  - run_area_tests
+  - run_contract_tests_if_boundary_touched
+  - request_reviewer
+rules:
+  do_not_change_contract_to_hide_bug: true
+  unrelated_refactor: forbidden

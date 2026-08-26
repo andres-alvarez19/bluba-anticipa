@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bluba-anticipa.local/contracts/recommendation.schema.json",
+  "title": "Recommendation",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "title", "source"],
+  "properties": {
+    "id": {"type": "string", "minLength": 1},
+    "title": {"type": "string", "minLength": 1},
+    "rationale": {"type": ["string", "null"]},
+    "source": {
+      "type": "string",
+      "enum": ["professional_plan", "historical_success", "validated_catalog"]
+    },
+    "strategy_id": {"type": ["string", "null"]}
+  }
+}

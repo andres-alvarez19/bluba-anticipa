@@ -1,0 +1,19 @@
+name: feature
+version: 1
+steps:
+  - identify_owner_role
+  - read_agents_md
+  - read_product_scope
+  - read_applicable_contracts
+  - read_relevant_adrs
+  - define_acceptance_criteria
+  - run_baseline_tests
+  - implement_minimal_change
+  - add_or_update_tests
+  - run_area_tests
+  - run_contract_tests
+  - request_reviewer
+rules:
+  contract_change: use_contract_change_workflow
+  cross_boundary_change: require_architect_review
+  unrelated_refactor: forbidden
