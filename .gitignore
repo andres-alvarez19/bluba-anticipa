@@ -1,0 +1,12 @@
+.venv/
+node_modules/
+dist/
+build/
+coverage/
+.expo/
+.pytest_cache/
+__pycache__/
+*.pyc
+.env
+.env.*
+!.env.example

@@ -1,0 +1,13 @@
+[project]
+name = "bluba-api"
+version = "0.1.0"
+description = "FastAPI service for Bluba Anticipa MVP bootstrap."
+requires-python = ">=3.11"
+dependencies = [
+  "fastapi>=0.115",
+  "uvicorn[standard]>=0.30",
+  "bluba-predictor==0.1.0"
+]
+
+[tool.pytest.ini_options]
+pythonpath = ["src", "../predictor/src"]

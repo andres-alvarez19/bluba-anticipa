@@ -1,0 +1,16 @@
+{
+  "name": "bluba-anticipa",
+  "version": "0.1.0",
+  "private": true,
+  "workspaces": [
+    "apps/mobile",
+    "packages/*"
+  ],
+  "scripts": {
+    "lint": "node scripts/lint-workspace.mjs",
+    "test": "node --test",
+    "test:mobile": "npm --workspace apps/mobile run test",
+    "contracts": "python3 scripts/validate_contracts.py"
+  },
+  "devDependencies": {}
+}
