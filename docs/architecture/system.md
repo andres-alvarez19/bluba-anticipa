@@ -64,7 +64,7 @@ Mobile
 
 - `contracts/` es la fuente de verdad de fronteras.
 - `contracts/features.yaml` es la fuente de verdad semántica de features.
-- `services/predictor/models/baseline-v1.yaml` contiene parámetros de ingeniería demostrativos; no es contrato ni fuente clínica.
+- `services/predictor/models/baseline-demo-v1.json` contiene parámetros de ingeniería demostrativos; no es contrato ni fuente clínica.
 
 ## Model Status: baseline-demo-v1
 
@@ -79,6 +79,7 @@ Los escenarios sintéticos de `evals/model/current-risk/` validan comportamiento
 - `LOW_CONFIDENCE` mantiene `risk` visible y reporta confianza baja.
 - Riesgo y confianza son dimensiones independientes.
 - La disponibilidad de baseline se evalúa por historial válido; Stage C usa mínimo provisional de 7 días y baseline suficiente desde 14 días.
+- `confidence < 0.40` produce `INSUFFICIENT_DATA`; una confianza LOW desde `0.40` hasta antes de `0.55` produce `LOW_CONFIDENCE` con risk visible.
 
 ## Baseline
 

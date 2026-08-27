@@ -31,10 +31,10 @@ RISK_KEYS = {
 }
 
 
-def test_model_version_is_hybrid_mvp_v1() -> None:
+def test_model_version_is_baseline_demo_v1() -> None:
     config = load_model_config()
 
-    assert config.model_version == "hybrid-mvp-v1"
+    assert config.model_version == "baseline-demo-v1"
     assert config.horizon_hours == 24
 
 
@@ -57,10 +57,12 @@ def test_risk_threshold_boundaries(score: float, expected: RiskLevel) -> None:
     ("score", "expected"),
     [
         (0.0, ConfidenceLevel.LOW),
-        (0.399999, ConfidenceLevel.LOW),
-        (0.4, ConfidenceLevel.MEDIUM),
-        (0.749999, ConfidenceLevel.MEDIUM),
-        (0.75, ConfidenceLevel.HIGH),
+        (0.3999, ConfidenceLevel.LOW),
+        (0.4, ConfidenceLevel.LOW),
+        (0.549999, ConfidenceLevel.LOW),
+        (0.55, ConfidenceLevel.MEDIUM),
+        (0.799999, ConfidenceLevel.MEDIUM),
+        (0.8, ConfidenceLevel.HIGH),
         (1.0, ConfidenceLevel.HIGH),
     ],
 )
@@ -86,6 +88,13 @@ def test_thresholds_do_not_overlap() -> None:
         assert medium.maximum == high.minimum
         assert low.maximum_exclusive
         assert medium.maximum_exclusive
+
+
+def test_minimum_prediction_score_leaves_reachable_low_confidence_band() -> None:
+    config = load_model_config()
+
+    assert config.confidence_scoring.minimum_score_for_prediction == 0.4
+    assert config.confidence_scoring.minimum_score_for_prediction < config.confidence_levels.low.maximum
 
 
 def test_invalid_threshold_gap_rejected(tmp_path: Path) -> None:
@@ -115,17 +124,15 @@ def test_invalid_score_rejected(score: float) -> None:
 def test_minimum_data_config() -> None:
     minimum = load_model_config().minimum_data
 
-    assert minimum.completeness == 0.35
-    assert minimum.history_days == 3
-    assert minimum.core_fields == 2
+    assert minimum.critical_groups_total == 3
+    assert minimum.minimum_critical_groups_present == 2
     assert minimum.max_record_age_hours == 72
 
 
-def test_core_fields_config() -> None:
+def test_minimum_critical_groups_do_not_exceed_total() -> None:
     config = load_model_config()
 
-    assert config.core_fields == ("calidad_sueno", "estado_despertar", "nivel_regulacion")
-    assert config.minimum_data.core_fields <= len(config.core_fields)
+    assert config.minimum_data.minimum_critical_groups_present <= config.minimum_data.critical_groups_total
 
 
 def test_windows_config() -> None:
@@ -133,18 +140,21 @@ def test_windows_config() -> None:
 
     assert windows.accumulators_hours == 72
     assert windows.event_history_days == 7
-    assert windows.baseline_valid_days == 14
+    assert windows.baseline_provisional_min_valid_days == 7
+    assert windows.baseline_target_valid_days == 14
 
 
 @pytest.mark.parametrize(
     ("path", "value", "message"),
     [
         (("model_version",), "", "model_version"),
-        (("horizon_hours",), 0, "horizon_hours"),
+        (("horizon_hours",), 12, "horizon_hours"),
         (("windows", "accumulators_hours"), 0, "accumulators_hours"),
-        (("minimum_data", "completeness"), 1.1, "completeness"),
-        (("minimum_data", "history_days"), -1, "history_days"),
-        (("minimum_data", "core_fields"), 4, "cannot exceed"),
+        (("windows", "event_history_days"), 8, "event_history_days"),
+        (("windows", "baseline_provisional_min_valid_days"), 6, "baseline_provisional_min_valid_days"),
+        (("windows", "baseline_target_valid_days"), 13, "baseline_target_valid_days"),
+        (("minimum_data", "critical_groups_total"), 0, "critical_groups_total"),
+        (("minimum_data", "minimum_critical_groups_present"), 4, "cannot exceed"),
         (("minimum_data", "max_record_age_hours"), -1, "max_record_age_hours"),
     ],
 )

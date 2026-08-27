@@ -31,7 +31,9 @@ La decisión incluye:
 - datos futuros excluidos por `prediction_at`;
 - manejo explícito de `INSUFFICIENT_DATA` con `risk = null`;
 - `LOW_CONFIDENCE` conserva risk visible;
-- parámetros y thresholds provisionales en `baseline-v1.yaml`;
+- parámetros y thresholds provisionales en `services/predictor/models/baseline-demo-v1.json`;
+- baseline provisional disponible desde 7 días válidos y baseline objetivo/suficiente desde 14 días válidos;
+- `confidence < 0.40` produce `INSUFFICIENT_DATA`; confianza LOW desde `0.40` hasta antes de `0.55` produce `LOW_CONFIDENCE`;
 - escenarios sintéticos para validación del prototipo;
 - indicador de datos sintéticos cuando corresponda.
 
@@ -41,7 +43,7 @@ La decisión incluye:
 - No hay entrenamiento ni validación clínica en Stage C.
 - No se deben afirmar sensibilidad, especificidad, precisión clínica ni causalidad.
 - Cambios de weights o semántica del baseline deben pasar por tests/evals y documentarse.
-- `contracts/features.yaml` sigue siendo la fuente semántica de features; `baseline-v1.yaml` solo contiene parámetros de ingeniería demo.
+- `contracts/features.yaml` sigue siendo la fuente semántica de features; `baseline-demo-v1.json` solo contiene parámetros de ingeniería demo.
 
 ## Alternatives
 

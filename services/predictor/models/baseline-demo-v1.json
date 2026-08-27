@@ -1,31 +1,26 @@
 {
-  "model_version": "hybrid-mvp-v1",
+  "model_version": "baseline-demo-v1",
   "horizon_hours": 24,
   "windows": {
     "accumulators_hours": 72,
     "event_history_days": 7,
-    "baseline_valid_days": 14
+    "baseline_provisional_min_valid_days": 7,
+    "baseline_target_valid_days": 14
   },
   "minimum_data": {
-    "completeness": 0.35,
-    "history_days": 3,
-    "core_fields": 2,
+    "critical_groups_total": 3,
+    "minimum_critical_groups_present": 2,
     "max_record_age_hours": 72
   },
-  "core_fields": [
-    "calidad_sueno",
-    "estado_despertar",
-    "nivel_regulacion"
-  ],
   "risk_levels": {
     "LOW": {"min": 0.0, "max_exclusive": 0.35},
     "MEDIUM": {"min": 0.35, "max_exclusive": 0.65},
     "HIGH": {"min": 0.65, "max": 1.0}
   },
   "confidence_levels": {
-    "LOW": {"min": 0.0, "max_exclusive": 0.4},
-    "MEDIUM": {"min": 0.4, "max_exclusive": 0.75},
-    "HIGH": {"min": 0.75, "max": 1.0}
+    "LOW": {"min": 0.0, "max_exclusive": 0.55},
+    "MEDIUM": {"min": 0.55, "max_exclusive": 0.8},
+    "HIGH": {"min": 0.8, "max": 1.0}
   },
   "risk_scoring": {
     "intercept": 0.08,

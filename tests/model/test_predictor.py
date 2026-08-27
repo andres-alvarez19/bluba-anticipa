@@ -1,5 +1,6 @@
 from datetime import datetime
 
+import bluba_predictor.engine as engine
 from bluba_predictor import FactorCode, PredictionEngineInput, PredictionEngineOutput, predict
 
 
@@ -123,6 +124,80 @@ def test_interpretable_recent_trend_allows_low_history_when_confidence_is_suffic
     prediction = predict(_input(derived={"regulation_trend_3d": -0.1}, data_quality={"history_days": 1}))
 
     assert prediction["risk"] is not None
+
+
+def test_seven_valid_history_days_make_baseline_available_without_recent_trend() -> None:
+    prediction = predict(_input(derived={"regulation_trend_3d": None}, data_quality={"history_days": 7}))
+
+    assert prediction["risk"] is not None
+
+
+def test_six_valid_history_days_keep_baseline_unavailable_without_recent_trend() -> None:
+    prediction = predict(_input(derived={"regulation_trend_3d": None}, data_quality={"history_days": 6}))
+
+    assert prediction["status"] == "INSUFFICIENT_DATA"
+    assert prediction["risk"] is None
+
+
+def test_baseline_availability_is_provisional_until_fourteen_days() -> None:
+    day_7 = predict(_input(derived={"regulation_trend_3d": None}, data_quality={"history_days": 7}))
+    day_13 = predict(_input(derived={"regulation_trend_3d": None}, data_quality={"history_days": 13}))
+    day_14 = predict(_input(derived={"regulation_trend_3d": None}, data_quality={"history_days": 14}))
+
+    assert day_7["risk"] is not None
+    assert day_13["risk"] is not None
+    assert day_14["risk"] is not None
+    assert day_7["confidence"]["score"] < day_13["confidence"]["score"] < day_14["confidence"]["score"]
+
+
+def test_natural_low_confidence_prediction_returns_risk() -> None:
+    prediction = predict(
+        _input(
+            data_quality={
+                "critical_present": 2,
+                "hours_since_last_record": 70,
+                "history_days": 7,
+                "sources": ["FAMILY"],
+            }
+        )
+    )
+
+    assert prediction["confidence"]["score"] == 0.4722
+    assert prediction["confidence"]["level"] == "LOW"
+    assert prediction["status"] == "LOW_CONFIDENCE"
+    assert prediction["risk"] is not None
+
+
+def test_confidence_gate_boundary_statuses(monkeypatch) -> None:
+    def force_confidence(score: float) -> None:
+        monkeypatch.setattr(engine, "_confidence_score", lambda data_quality, config: score)
+
+    force_confidence(0.3999)
+    below_minimum = predict(_input())
+
+    force_confidence(0.4)
+    at_minimum = predict(_input())
+
+    force_confidence(0.5499)
+    below_medium = predict(_input())
+
+    force_confidence(0.55)
+    at_medium = predict(_input())
+
+    force_confidence(0.8)
+    at_high = predict(_input())
+
+    assert below_minimum["status"] == "INSUFFICIENT_DATA"
+    assert below_minimum["risk"] is None
+    assert at_minimum["status"] == "LOW_CONFIDENCE"
+    assert at_minimum["risk"] is not None
+    assert at_minimum["confidence"]["level"] == "LOW"
+    assert below_medium["status"] == "LOW_CONFIDENCE"
+    assert below_medium["confidence"]["level"] == "LOW"
+    assert at_medium["status"] == "OK"
+    assert at_medium["confidence"]["level"] == "MEDIUM"
+    assert at_high["status"] == "OK"
+    assert at_high["confidence"]["level"] == "HIGH"
 
 
 def test_adverse_magnitudes_are_monotonic_for_baseline_model() -> None:

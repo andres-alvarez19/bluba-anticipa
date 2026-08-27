@@ -1,4 +1,4 @@
-from .engine import PredictionEngineInput, predict
+from . import PredictionEngineInput, predict
 
 
 def main() -> None:

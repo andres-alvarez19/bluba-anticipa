@@ -28,7 +28,7 @@ Mobile
 - `contracts/prediction.schema.json`: contrato canónico Backend ↔ Predictor.
 - `contracts/daily-record.schema.json`, `event.schema.json`, `recommendation.schema.json`: contratos de dominio especializados.
 - `contracts/features.yaml`: semántica versionada de features, ventanas, missing data y baseline.
-- `services/predictor/models/baseline-v1.yaml`: parámetros demo del baseline; no es contrato ni evidencia clínica.
+- `services/predictor/models/baseline-demo-v1.json`: parámetros demo del baseline; no es contrato ni evidencia clínica.
 
 ## Principios
 
@@ -39,6 +39,8 @@ Mobile
 - `RiskPrediction` público y `PredictionEngineOutput` interno son fronteras distintas.
 - Riesgo y confianza son independientes.
 - Datos faltantes permanecen explícitos; missing no equivale a normal.
+- Baseline provisional está disponible desde 7 días válidos; 14 días es el objetivo/suficiencia de profundidad.
+- `confidence < 0.40` produce `INSUFFICIENT_DATA`; confidence LOW entre `0.40` y `<0.55` produce `LOW_CONFIDENCE` con risk visible.
 - Metadata QA (`scenario_id`, `scenario_type`) no llega al predictor.
 - Fixtures/evals sintéticos prueban comportamiento, no accuracy clínica.
 

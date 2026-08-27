@@ -27,18 +27,19 @@ def predict(payload: PredictionEngineInput) -> PredictionEngineOutput:
     missing_critical = payload.data_quality.get("missing_critical_data") or []
     critical_present = payload.data_quality.get("critical_present")
     if critical_present is None:
-        critical_present = max(0, len(config.core_fields) - len(missing_critical))
+        critical_present = max(0, config.minimum_data.critical_groups_total - len(missing_critical))
     risk_score, contributions = _risk_score(payload, config)
     required_fields = _required_fields(payload.data_quality)
     warnings: list[dict[str, Any]] = []
 
-    baseline_available = (payload.data_quality.get("history_days") or 0) >= config.minimum_data.history_days
+    valid_history_days = payload.data_quality.get("history_days") or 0
+    baseline_available = valid_history_days >= config.windows.baseline_provisional_min_valid_days
     recent_trend_interpretable = payload.derived.get("regulation_trend_3d") is not None
 
     no_baseline_and_no_trend = not baseline_available and not recent_trend_interpretable
 
     if (
-        critical_present < config.minimum_data.core_fields
+        critical_present < config.minimum_data.minimum_critical_groups_present
         or confidence_score < config.confidence_scoring.minimum_score_for_prediction
         or no_baseline_and_no_trend
     ):
@@ -122,10 +123,10 @@ def _confidence_score(data_quality: dict[str, Any], config: ModelConfig) -> floa
     sources = data_quality.get("sources") or []
     components = {
         "critical_completeness": (data_quality.get("critical_present") or 0)
-        / (data_quality.get("critical_total") or len(config.core_fields)),
+        / (data_quality.get("critical_total") or config.minimum_data.critical_groups_total),
         "record_recency": record_recency,
         "source_coverage": min(len(sources) / 2, 1.0),
-        "history_depth": min((data_quality.get("history_days") or 0) / config.windows.baseline_valid_days, 1.0),
+        "history_depth": min((data_quality.get("history_days") or 0) / config.windows.baseline_target_valid_days, 1.0),
         "record_consistency": config.confidence_scoring.record_consistency_default,
     }
     return round(_clamp(sum(components[key] * weights[key] for key in weights)), 4)

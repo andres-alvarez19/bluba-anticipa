@@ -10,7 +10,7 @@ from typing import Any, Mapping, TypeVar
 from .domain import ConfidenceLevel, FactorCode, FactorDirection, FactorWindow, RiskLevel
 
 
-MODEL_CONFIG_PATH = Path(__file__).resolve().parents[2] / "models" / "hybrid-mvp-v1.json"
+MODEL_CONFIG_PATH = Path(__file__).resolve().parents[2] / "models" / "baseline-demo-v1.json"
 
 
 class ModelConfigError(ValueError):
@@ -21,14 +21,14 @@ class ModelConfigError(ValueError):
 class WindowsConfig:
     accumulators_hours: int
     event_history_days: int
-    baseline_valid_days: int
+    baseline_provisional_min_valid_days: int
+    baseline_target_valid_days: int
 
 
 @dataclass(frozen=True)
 class MinimumDataConfig:
-    completeness: float
-    history_days: int
-    core_fields: int
+    critical_groups_total: int
+    minimum_critical_groups_present: int
     max_record_age_hours: int
 
 
@@ -81,7 +81,6 @@ class ModelConfig:
     horizon_hours: int
     windows: WindowsConfig
     minimum_data: MinimumDataConfig
-    core_fields: tuple[str, ...]
     risk_levels: LevelThresholds
     confidence_levels: LevelThresholds
     risk_scoring: RiskScoringConfig
@@ -124,35 +123,43 @@ def resolve_confidence_level(score: float, config: ModelConfig) -> ConfidenceLev
 def _parse_model_config(raw: Mapping[str, Any]) -> ModelConfig:
     model_version = _string(raw.get("model_version"), "model_version")
     horizon_hours = _integer(raw.get("horizon_hours"), "horizon_hours")
-    if horizon_hours <= 0:
-        raise ModelConfigError("horizon_hours must be greater than zero")
+    if horizon_hours != 24:
+        raise ModelConfigError("horizon_hours must be 24")
 
     windows_raw = _mapping(raw.get("windows"), "windows")
     windows = WindowsConfig(
         accumulators_hours=_positive_integer(windows_raw, "accumulators_hours", "windows"),
         event_history_days=_positive_integer(windows_raw, "event_history_days", "windows"),
-        baseline_valid_days=_positive_integer(windows_raw, "baseline_valid_days", "windows"),
+        baseline_provisional_min_valid_days=_positive_integer(
+            windows_raw,
+            "baseline_provisional_min_valid_days",
+            "windows",
+        ),
+        baseline_target_valid_days=_positive_integer(windows_raw, "baseline_target_valid_days", "windows"),
     )
+    if windows.accumulators_hours != 72:
+        raise ModelConfigError("windows.accumulators_hours must be 72")
+    if windows.event_history_days != 7:
+        raise ModelConfigError("windows.event_history_days must be 7")
+    if windows.baseline_provisional_min_valid_days != 7:
+        raise ModelConfigError("windows.baseline_provisional_min_valid_days must be 7")
+    if windows.baseline_target_valid_days != 14:
+        raise ModelConfigError("windows.baseline_target_valid_days must be 14")
 
     minimum_raw = _mapping(raw.get("minimum_data"), "minimum_data")
-    completeness = _number(minimum_raw.get("completeness"), "minimum_data.completeness")
-    if not 0 <= completeness <= 1:
-        raise ModelConfigError("minimum_data.completeness must be between zero and one")
     minimum_data = MinimumDataConfig(
-        completeness=completeness,
-        history_days=_non_negative_integer(minimum_raw, "history_days", "minimum_data"),
-        core_fields=_non_negative_integer(minimum_raw, "core_fields", "minimum_data"),
+        critical_groups_total=_positive_integer(minimum_raw, "critical_groups_total", "minimum_data"),
+        minimum_critical_groups_present=_positive_integer(
+            minimum_raw,
+            "minimum_critical_groups_present",
+            "minimum_data",
+        ),
         max_record_age_hours=_non_negative_integer(minimum_raw, "max_record_age_hours", "minimum_data"),
     )
-
-    core_fields_raw = raw.get("core_fields")
-    if not isinstance(core_fields_raw, list) or not core_fields_raw:
-        raise ModelConfigError("core_fields must be a non-empty list")
-    core_fields = tuple(_string(field, "core_fields item") for field in core_fields_raw)
-    if len(set(core_fields)) != len(core_fields):
-        raise ModelConfigError("core_fields must not contain duplicates")
-    if minimum_data.core_fields > len(core_fields):
-        raise ModelConfigError("minimum_data.core_fields cannot exceed configured core_fields")
+    if minimum_data.minimum_critical_groups_present > minimum_data.critical_groups_total:
+        raise ModelConfigError("minimum_data.minimum_critical_groups_present cannot exceed critical_groups_total")
+    if minimum_data.max_record_age_hours != 72:
+        raise ModelConfigError("minimum_data.max_record_age_hours must be 72")
 
     risk_levels = _thresholds(raw.get("risk_levels"), "risk_levels")
     confidence_levels = _thresholds(raw.get("confidence_levels"), "confidence_levels")
@@ -174,12 +181,26 @@ def _parse_model_config(raw: Mapping[str, Any]) -> ModelConfig:
         ),
         weights=_numeric_mapping(confidence_raw.get("weights"), "confidence_scoring.weights"),
     )
+    if confidence_scoring.minimum_score_for_prediction >= confidence_levels.low.maximum:
+        raise ModelConfigError("confidence_scoring.minimum_score_for_prediction must be below LOW upper boundary")
 
     mappings_raw = _mapping(raw.get("factor_mappings"), "factor_mappings")
     if set(mappings_raw) != set(_FACTOR_CODE_BY_FEATURE):
         raise ModelConfigError("factor_mappings must match the temporary scoring features")
     if set(risk_scoring.weights) != set(mappings_raw):
         raise ModelConfigError("risk_scoring.weights and factor_mappings must use the same features")
+    if set(risk_scoring.weights) != set(_FACTOR_CODE_BY_FEATURE):
+        raise ModelConfigError("risk_scoring.weights must match the temporary scoring features")
+    if set(confidence_scoring.weights) != {
+        "critical_completeness",
+        "record_recency",
+        "source_coverage",
+        "history_depth",
+        "record_consistency",
+    }:
+        raise ModelConfigError("confidence_scoring.weights must match confidence components")
+    if any(weight < 0 for weight in risk_scoring.weights.values()):
+        raise ModelConfigError("risk_scoring.weights must be non-negative")
     factor_mappings = {
         feature: _factor_mapping(feature, _mapping(value, f"factor_mappings.{feature}"))
         for feature, value in mappings_raw.items()
@@ -190,7 +211,6 @@ def _parse_model_config(raw: Mapping[str, Any]) -> ModelConfig:
         horizon_hours=horizon_hours,
         windows=windows,
         minimum_data=minimum_data,
-        core_fields=core_fields,
         risk_levels=risk_levels,
         confidence_levels=confidence_levels,
         risk_scoring=risk_scoring,
