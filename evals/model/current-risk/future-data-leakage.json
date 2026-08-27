@@ -1,0 +1,20 @@
+{
+  "scenario_id": "future-data-leakage",
+  "child_id": "eval-future-data-leakage",
+  "description": "Synthetic stable history with an extreme adverse record after cutoff that must be ignored.",
+  "prediction_at": "2026-08-26T12:00:00+00:00",
+  "history": [
+    {"recorded_at": "2026-08-19T08:00:00+00:00", "source": "FAMILY", "context": "HOME", "features": {"sleep_quality": "reparador", "sleep_hours": 8.0, "wake_state": "tranquilo_alegre", "regulation_level": "estable_con_apoyo", "alert_level": "optimo", "routine_change": false, "gastrointestinal_status": "normal", "observed_behavior": ["juego_funcional"], "exceptional_event": false, "sensory_profile_snapshot": ["hipersensibilidad_auditiva"]}},
+    {"recorded_at": "2026-08-20T08:00:00+00:00", "source": "FAMILY", "context": "HOME", "features": {"sleep_quality": "reparador", "sleep_hours": 8.0, "wake_state": "tranquilo_alegre", "regulation_level": "estable_con_apoyo", "alert_level": "optimo", "routine_change": false, "gastrointestinal_status": "normal", "observed_behavior": ["juego_funcional"], "exceptional_event": false, "sensory_profile_snapshot": ["hipersensibilidad_auditiva"]}},
+    {"recorded_at": "2026-08-21T08:00:00+00:00", "source": "FAMILY", "context": "HOME", "features": {"sleep_quality": "reparador", "sleep_hours": 8.0, "wake_state": "tranquilo_alegre", "regulation_level": "estable_con_apoyo", "alert_level": "optimo", "routine_change": false, "gastrointestinal_status": "normal", "observed_behavior": ["juego_funcional"], "exceptional_event": false, "sensory_profile_snapshot": ["hipersensibilidad_auditiva"]}},
+    {"recorded_at": "2026-08-22T08:00:00+00:00", "source": "SCHOOL", "context": "SCHOOL", "features": {"sleep_quality": "reparador", "sleep_hours": 8.0, "wake_state": "tranquilo_alegre", "regulation_level": "estable_con_apoyo", "alert_level": "optimo", "routine_change": false, "gastrointestinal_status": "normal", "observed_behavior": ["juego_funcional"], "exceptional_event": false, "sensory_profile_snapshot": ["hipersensibilidad_auditiva"]}},
+    {"recorded_at": "2026-08-24T08:00:00+00:00", "source": "FAMILY", "context": "HOME", "features": {"sleep_quality": "reparador", "sleep_hours": 8.0, "wake_state": "tranquilo_alegre", "regulation_level": "estable_con_apoyo", "alert_level": "optimo", "routine_change": false, "gastrointestinal_status": "normal", "observed_behavior": ["juego_funcional"], "exceptional_event": false, "sensory_profile_snapshot": ["hipersensibilidad_auditiva"]}},
+    {"recorded_at": "2026-08-25T08:00:00+00:00", "source": "FAMILY", "context": "HOME", "features": {"sleep_quality": "reparador", "sleep_hours": 8.0, "wake_state": "tranquilo_alegre", "regulation_level": "estable_con_apoyo", "alert_level": "optimo", "routine_change": false, "gastrointestinal_status": "normal", "observed_behavior": ["juego_funcional"], "exceptional_event": false, "sensory_profile_snapshot": ["hipersensibilidad_auditiva"]}},
+    {"recorded_at": "2026-08-26T08:00:00+00:00", "source": "FAMILY", "context": "HOME", "features": {"sleep_quality": "reparador", "sleep_hours": 8.0, "wake_state": "tranquilo_alegre", "regulation_level": "estable_con_apoyo", "alert_level": "optimo", "routine_change": false, "gastrointestinal_status": "normal", "observed_behavior": ["juego_funcional"], "exceptional_event": false, "sensory_profile_snapshot": ["hipersensibilidad_auditiva"]}},
+    {"recorded_at": "2026-08-26T13:00:00+00:00", "source": "FAMILY", "context": "HOME", "features": {"sleep_quality": "interrumpido", "sleep_hours": 3.0, "wake_state": "irritable_llorando", "regulation_level": "desregulacion_frecuente", "alert_level": "alto", "routine_change": true, "gastrointestinal_status": "alterado", "observed_behavior": ["ruido_intenso", "sobrecarga_sensorial"], "exceptional_event": true, "sensory_profile_snapshot": ["hipersensibilidad_auditiva"]}}
+  ],
+  "events": [
+    {"occurred_at": "2026-08-26T13:30:00+00:00", "event_type": "DYSREGULATION", "context": "HOME"}
+  ],
+  "expected": {"status": ["OK", "LOW_CONFIDENCE"], "risk_null": false, "risk_level": "LOW", "confidence_level": ["LOW", "MEDIUM", "HIGH"], "required_factor_codes": []}
+}

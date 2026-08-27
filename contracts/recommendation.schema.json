@@ -1,0 +1,609 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:bluba:anticipa:contracts:recommendation:0.1.0",
+  "title": "Bluba Anticipa Recommendation and Intervention Contract",
+  "description": "Contrato canónico para recomendaciones preventivas seguras, registro de intervenciones aplicadas y resultados en el MVP NeuroHack 2026. Las recomendaciones son resueltas por Backend a partir de estrategias controladas, factores emitidos por la predicción, contexto de uso e historial individual. Un LLM puede adaptar redacción, pero no crear libremente nuevas intervenciones clínicas.",
+  "x-contract-version": "0.1.0",
+  "x-domain-invariants": [
+    "Toda recomendación debe referenciar un strategy_id existente en una fuente controlada; no puede existir únicamente como texto generado por un LLM.",
+    "Los únicos source_type canónicos del contrato P0 son PROFESSIONAL, HISTORICAL y VALIDATED_CATALOG.",
+    "Una recomendación con source_type=HISTORICAL debe estar respaldada por al menos un InterventionResult con outcome SUCCESS o PARTIAL; no basta con que la estrategia haya sido utilizada previamente.",
+    "El contexto solicitado filtra estrategias: HOME acepta HOME o BOTH; SCHOOL acepta SCHOOL o BOTH.",
+    "La prioridad es resuelta por Backend/Recommendation Resolver. El Frontend no debe reordenar estrategias usando lógica clínica o predictiva propia.",
+    "El predictor entrega risk/confidence/top_factors, pero no selecciona ni inventa intervenciones. Recommendation Resolver es un componente separado.",
+    "Cuando la predicción tenga status=INSUFFICIENT_DATA y no exista una recomendación preventiva confiable, la respuesta debe poder declarar INSUFFICIENT_DATA sin devolver estrategias aparentando certeza.",
+    "Registrar una estrategia aplicada crea una Intervention independiente de la Recommendation; una recomendación no implica que la estrategia fue ejecutada.",
+    "InterventionResult debe quedar trazablemente vinculado a la Intervention correspondiente.",
+    "El vocabulario público P0 para resultados es SUCCESS, PARTIAL y NO_EFFECT.",
+    "Si se utiliza IA generativa para adaptar la redacción, el contenido debe permanecer vinculado al mismo strategy_id y source_reference; la IA no puede modificar la identidad de la estrategia ni su fuente.",
+    "Los permisos por rol/contexto se aplican en Backend antes de devolver recomendaciones, historial o resultados."
+  ],
+  "oneOf": [
+    { "$ref": "#/$defs/RecommendationsResponse" },
+    { "$ref": "#/$defs/InterventionCreateRequest" },
+    { "$ref": "#/$defs/Intervention" },
+    { "$ref": "#/$defs/InterventionResultCreateRequest" },
+    { "$ref": "#/$defs/InterventionResult" },
+    { "$ref": "#/$defs/InterventionHistoryResponse" }
+  ],
+  "$defs": {
+    "RecommendationContext": {
+      "type": "string",
+      "enum": ["HOME", "SCHOOL"],
+      "description": "Contexto de consumo solicitado por la aplicación."
+    },
+    "StrategyContext": {
+      "type": "string",
+      "enum": ["HOME", "SCHOOL", "BOTH"],
+      "description": "Contextos para los que una estrategia controlada está autorizada."
+    },
+    "RecommendationSourceType": {
+      "type": "string",
+      "enum": ["PROFESSIONAL", "HISTORICAL", "VALIDATED_CATALOG"],
+      "description": "Procedencia canónica P0. PROFESSIONAL = estrategia aprobada/indicada profesionalmente; HISTORICAL = estrategia con evidencia individual previa favorable; VALIDATED_CATALOG = estrategia proveniente de catálogo preventivo validado."
+    },
+    "RecommendationStatus": {
+      "type": "string",
+      "enum": ["AVAILABLE", "NO_ELIGIBLE_STRATEGIES", "INSUFFICIENT_DATA"],
+      "description": "Estado operacional del resolver de recomendaciones."
+    },
+    "InterventionOutcome": {
+      "type": "string",
+      "enum": ["SUCCESS", "PARTIAL", "NO_EFFECT"],
+      "description": "Vocabulario público mínimo del MVP para registrar el resultado de una estrategia aplicada."
+    },
+    "TextRenderingMode": {
+      "type": "string",
+      "enum": ["CONTROLLED", "AI_ADAPTED"],
+      "description": "Indica si la redacción visible proviene directamente de contenido controlado o fue adaptada lingüísticamente por IA sin cambiar la estrategia subyacente."
+    },
+    "SourceReference": {
+      "type": "object",
+      "description": "Referencia auditable a la fuente controlada que autoriza la estrategia. No sustituye los controles de acceso ni expone necesariamente todos los metadatos internos al Frontend.",
+      "required": ["source_id"],
+      "properties": {
+        "source_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "description": "Identificador de la definición profesional, evidencia histórica o entrada de catálogo que respalda la recomendación."
+        },
+        "source_version": {
+          "type": ["string", "null"],
+          "minLength": 1,
+          "maxLength": 64,
+          "description": "Versión de la fuente cuando exista versionado explícito."
+        }
+      },
+      "additionalProperties": false
+    },
+    "RecommendationReason": {
+      "type": "object",
+      "description": "Justificación estructurada de por qué la estrategia es pertinente para la situación actual. Debe permanecer anclada a factores reales o al contexto permitido.",
+      "required": ["summary"],
+      "properties": {
+        "summary": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500
+        },
+        "related_factor_codes": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[A-Z][A-Z0-9_]*$"
+          },
+          "uniqueItems": true,
+          "maxItems": 10,
+          "default": [],
+          "description": "Códigos de factores emitidos por PredictionEngineOutput.top_factors que motivan esta selección cuando corresponda."
+        }
+      },
+      "additionalProperties": false
+    },
+    "HistoricalOutcomeCounts": {
+      "type": "object",
+      "required": ["success", "partial", "no_effect"],
+      "properties": {
+        "success": { "type": "integer", "minimum": 0 },
+        "partial": { "type": "integer", "minimum": 0 },
+        "no_effect": { "type": "integer", "minimum": 0 }
+      },
+      "anyOf": [
+        { "properties": { "success": { "minimum": 1 } } },
+        { "properties": { "partial": { "minimum": 1 } } }
+      ],
+      "additionalProperties": false,
+      "description": "Para respaldar la etiqueta HISTORICAL debe existir al menos un resultado SUCCESS o PARTIAL."
+    },
+    "HistoricalEvidence": {
+      "type": "object",
+      "description": "Evidencia mínima cuando se afirma que una estrategia fue útil previamente para este niño.",
+      "required": ["times_used", "outcomes", "supporting_intervention_ids", "supporting_result_ids"],
+      "properties": {
+        "times_used": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "outcomes": {
+          "$ref": "#/$defs/HistoricalOutcomeCounts"
+        },
+        "supporting_intervention_ids": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "uniqueItems": true
+        },
+        "supporting_result_ids": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "uniqueItems": true,
+          "description": "Debe contener al menos un InterventionResult que respalde la afirmación de utilidad histórica."
+        }
+      },
+      "additionalProperties": false
+    },
+    "Recommendation": {
+      "type": "object",
+      "title": "Recommendation",
+      "description": "Estrategia preventiva seleccionada por Backend/Recommendation Resolver para un niño y contexto determinados. La estrategia debe existir previamente en una fuente controlada.",
+      "required": [
+        "strategy_id",
+        "name",
+        "priority",
+        "source_type",
+        "source_reference",
+        "contexts",
+        "reason",
+        "rendering_mode"
+      ],
+      "properties": {
+        "strategy_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 240
+        },
+        "priority": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 99,
+          "description": "Orden de recomendación resuelto por Backend. 1 representa mayor prioridad."
+        },
+        "source_type": {
+          "$ref": "#/$defs/RecommendationSourceType"
+        },
+        "source_reference": {
+          "$ref": "#/$defs/SourceReference"
+        },
+        "contexts": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 3,
+          "items": { "$ref": "#/$defs/StrategyContext" },
+          "uniqueItems": true
+        },
+        "reason": {
+          "$ref": "#/$defs/RecommendationReason"
+        },
+        "instructions": {
+          "type": ["string", "null"],
+          "maxLength": 2000,
+          "description": "Instrucciones breves controladas o adaptadas desde contenido controlado; no constituyen una nueva intervención."
+        },
+        "rendering_mode": {
+          "$ref": "#/$defs/TextRenderingMode"
+        },
+        "historical_evidence": {
+          "oneOf": [
+            { "$ref": "#/$defs/HistoricalEvidence" },
+            { "type": "null" }
+          ],
+          "default": null
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": { "source_type": { "const": "HISTORICAL" } },
+            "required": ["source_type"]
+          },
+          "then": {
+            "required": ["historical_evidence"],
+            "properties": {
+              "historical_evidence": { "$ref": "#/$defs/HistoricalEvidence" }
+            }
+          }
+        }
+      ],
+      "additionalProperties": false
+    },
+    "RecommendationsResponse": {
+      "type": "object",
+      "title": "RecommendationsResponse",
+      "description": "Respuesta Backend → Frontend para GET /v1/children/{childId}/recommendations. La lista está filtrada por contexto, permisos y fuentes controladas.",
+      "required": ["child_id", "context", "status", "recommendations", "generated_at"],
+      "properties": {
+        "child_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "context": {
+          "$ref": "#/$defs/RecommendationContext"
+        },
+        "prediction_id": {
+          "type": ["string", "null"],
+          "minLength": 1,
+          "maxLength": 128,
+          "description": "Predicción que originó o contextualizó la resolución de estrategias, cuando corresponda."
+        },
+        "status": {
+          "$ref": "#/$defs/RecommendationStatus"
+        },
+        "recommendations": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/Recommendation" },
+          "maxItems": 5,
+          "description": "Conjunto reducido de acciones concretas. El límite 5 mantiene consistencia con el contrato HTTP inicial del MVP."
+        },
+        "message": {
+          "type": ["string", "null"],
+          "maxLength": 500,
+          "description": "Mensaje operacional cuando no existen estrategias elegibles o no hay información suficiente."
+        },
+        "generated_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "resolver_version": {
+          "type": ["string", "null"],
+          "minLength": 1,
+          "maxLength": 64,
+          "description": "Versión de reglas/ranking del Recommendation Resolver para trazabilidad."
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": { "status": { "const": "AVAILABLE" } },
+            "required": ["status"]
+          },
+          "then": {
+            "properties": {
+              "recommendations": { "minItems": 1 }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "status": { "enum": ["NO_ELIGIBLE_STRATEGIES", "INSUFFICIENT_DATA"] }
+            },
+            "required": ["status"]
+          },
+          "then": {
+            "properties": {
+              "recommendations": { "maxItems": 0 }
+            },
+            "required": ["message"]
+          }
+        },
+        {
+          "if": {
+            "properties": { "context": { "const": "HOME" } },
+            "required": ["context"]
+          },
+          "then": {
+            "properties": {
+              "recommendations": {
+                "items": {
+                  "allOf": [
+                    { "$ref": "#/$defs/Recommendation" },
+                    {
+                      "properties": {
+                        "contexts": {
+                          "contains": { "enum": ["HOME", "BOTH"] }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": { "context": { "const": "SCHOOL" } },
+            "required": ["context"]
+          },
+          "then": {
+            "properties": {
+              "recommendations": {
+                "items": {
+                  "allOf": [
+                    { "$ref": "#/$defs/Recommendation" },
+                    {
+                      "properties": {
+                        "contexts": {
+                          "contains": { "enum": ["SCHOOL", "BOTH"] }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      ],
+      "additionalProperties": false
+    },
+    "InterventionCreateRequest": {
+      "type": "object",
+      "title": "InterventionCreateRequest",
+      "description": "Registro de que una estrategia controlada fue efectivamente aplicada. La existencia de una Recommendation previa no implica automáticamente una Intervention.",
+      "required": ["strategy_id", "context", "applied_at"],
+      "properties": {
+        "strategy_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "context": {
+          "$ref": "#/$defs/RecommendationContext"
+        },
+        "applied_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "prediction_id": {
+          "type": ["string", "null"],
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "event_id": {
+          "type": ["string", "null"],
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "notes": {
+          "type": ["string", "null"],
+          "maxLength": 2000
+        }
+      },
+      "additionalProperties": false
+    },
+    "Intervention": {
+      "type": "object",
+      "title": "Intervention",
+      "description": "Entidad longitudinal que registra la aplicación efectiva de una estrategia a un niño.",
+      "required": ["intervention_id", "child_id", "strategy_id", "context", "applied_at"],
+      "properties": {
+        "intervention_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "child_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "strategy_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "strategy_name": {
+          "type": ["string", "null"],
+          "maxLength": 240
+        },
+        "context": {
+          "$ref": "#/$defs/RecommendationContext"
+        },
+        "applied_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "prediction_id": {
+          "type": ["string", "null"],
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "event_id": {
+          "type": ["string", "null"],
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "result": {
+          "oneOf": [
+            { "$ref": "#/$defs/InterventionResult" },
+            { "type": "null" }
+          ],
+          "default": null
+        }
+      },
+      "additionalProperties": false
+    },
+    "InterventionResultCreateRequest": {
+      "type": "object",
+      "title": "InterventionResultCreateRequest",
+      "description": "Feedback posterior sobre el efecto observado de una Intervention.",
+      "required": ["outcome", "recorded_at"],
+      "properties": {
+        "outcome": {
+          "$ref": "#/$defs/InterventionOutcome"
+        },
+        "recorded_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "notes": {
+          "type": ["string", "null"],
+          "maxLength": 2000
+        }
+      },
+      "additionalProperties": false
+    },
+    "InterventionResult": {
+      "type": "object",
+      "title": "InterventionResult",
+      "description": "Resultado persistido y trazable de una estrategia aplicada.",
+      "required": ["result_id", "intervention_id", "outcome", "recorded_at"],
+      "properties": {
+        "result_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "intervention_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "outcome": {
+          "$ref": "#/$defs/InterventionOutcome"
+        },
+        "recorded_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "notes": {
+          "type": ["string", "null"],
+          "maxLength": 2000
+        }
+      },
+      "additionalProperties": false
+    },
+    "InterventionHistoryResponse": {
+      "type": "object",
+      "title": "InterventionHistoryResponse",
+      "description": "Historial de intervenciones autorizado para el niño, utilizado por especialistas y como evidencia para personalización futura.",
+      "required": ["child_id", "items"],
+      "properties": {
+        "child_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "items": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/Intervention" }
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "examples": [
+    {
+      "child_id": "CH-002",
+      "context": "HOME",
+      "prediction_id": "RPR-00451",
+      "status": "AVAILABLE",
+      "recommendations": [
+        {
+          "strategy_id": "STR-001",
+          "name": "Anticipación visual de transición",
+          "priority": 1,
+          "source_type": "PROFESSIONAL",
+          "source_reference": {
+            "source_id": "PS-PLAN-002",
+            "source_version": "3"
+          },
+          "contexts": ["HOME", "SCHOOL"],
+          "reason": {
+            "summary": "Cambio de rutina reciente.",
+            "related_factor_codes": ["ROUTINE_CHANGE"]
+          },
+          "instructions": "Anticipar la transición mediante apoyos visuales ya definidos para el niño.",
+          "rendering_mode": "CONTROLLED",
+          "historical_evidence": null
+        },
+        {
+          "strategy_id": "STR-004",
+          "name": "Espacio de baja estimulación",
+          "priority": 2,
+          "source_type": "HISTORICAL",
+          "source_reference": {
+            "source_id": "HIST-STR-004"
+          },
+          "contexts": ["BOTH"],
+          "reason": {
+            "summary": "Existe exposición sensorial relevante y esta estrategia tuvo resultados favorables anteriormente.",
+            "related_factor_codes": ["RELEVANT_TRIGGER_EXPOSURE"]
+          },
+          "instructions": "Facilitar acceso al espacio de baja estimulación definido previamente.",
+          "rendering_mode": "AI_ADAPTED",
+          "historical_evidence": {
+            "times_used": 3,
+            "outcomes": {
+              "success": 2,
+              "partial": 0,
+              "no_effect": 1
+            },
+            "supporting_intervention_ids": ["INT-010", "INT-017", "INT-021"],
+            "supporting_result_ids": ["IR-010", "IR-017", "IR-021"]
+          }
+        }
+      ],
+      "message": null,
+      "generated_at": "2026-08-26T08:05:00-04:00",
+      "resolver_version": "recommendation-mvp-v1"
+    },
+    {
+      "child_id": "CH-002",
+      "context": "SCHOOL",
+      "prediction_id": "RPR-00452",
+      "status": "INSUFFICIENT_DATA",
+      "recommendations": [],
+      "message": "No existe información suficiente para emitir una recomendación preventiva confiable.",
+      "generated_at": "2026-08-26T08:05:00-04:00",
+      "resolver_version": "recommendation-mvp-v1"
+    },
+    {
+      "strategy_id": "STR-001",
+      "context": "HOME",
+      "applied_at": "2026-08-26T08:20:00-04:00",
+      "prediction_id": "RPR-00451",
+      "event_id": null,
+      "notes": "Se anticipó la transición antes de salir de casa."
+    },
+    {
+      "intervention_id": "INT-024",
+      "child_id": "CH-002",
+      "strategy_id": "STR-001",
+      "strategy_name": "Anticipación visual de transición",
+      "context": "HOME",
+      "applied_at": "2026-08-26T08:20:00-04:00",
+      "prediction_id": "RPR-00451",
+      "event_id": null,
+      "result": {
+        "result_id": "IR-024",
+        "intervention_id": "INT-024",
+        "outcome": "SUCCESS",
+        "recorded_at": "2026-08-26T20:15:00-04:00",
+        "notes": "La transición se realizó con menor dificultad."
+      }
+    },
+    {
+      "outcome": "PARTIAL",
+      "recorded_at": "2026-08-26T20:15:00-04:00",
+      "notes": "Ayudó inicialmente, pero fue necesario apoyo adicional."
+    }
+  ]
+}

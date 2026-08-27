@@ -1,0 +1,46 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: bluba_anticipa
+          POSTGRES_USER: bluba
+          POSTGRES_PASSWORD: bluba
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U bluba -d bluba_anticipa"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql+psycopg://bluba:bluba@localhost:5432/bluba_anticipa
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: npm ci
+      - run: python -m pip install --upgrade pip
+      - run: python -m pip install -e services/predictor -e services/api pytest
+      - run: make db-migrate
+      - run: make contracts
+      - run: make generate-check
+      - run: make typecheck
+      - run: npm --workspace apps/demo-web run test
+      - run: npm --workspace apps/demo-web run build
+      - run: make test
+      - run: make eval
+      - run: make smoke-current-risk
+      - run: make lint

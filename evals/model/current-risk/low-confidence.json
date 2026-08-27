@@ -1,0 +1,17 @@
+{
+  "scenario_id": "low-confidence",
+  "child_id": "eval-low-confidence",
+  "description": "Synthetic scenario with enough risk inputs but limited freshness/source/critical evidence, yielding LOW_CONFIDENCE with non-null risk.",
+  "prediction_at": "2026-08-26T12:00:00+00:00",
+  "history": [
+    {"recorded_at": "2026-08-13T08:00:00+00:00", "source": "FAMILY", "context": "HOME", "features": {"sleep_quality": "reparador", "sleep_hours": 8.0, "regulation_level": "estable_con_apoyo", "alert_level": "optimo", "routine_change": false, "gastrointestinal_status": "normal", "observed_behavior": ["juego_funcional"], "exceptional_event": false, "sensory_profile_snapshot": ["hipersensibilidad_auditiva"]}},
+    {"recorded_at": "2026-08-14T08:00:00+00:00", "source": "FAMILY", "context": "HOME", "features": {"sleep_quality": "reparador", "sleep_hours": 8.0, "regulation_level": "estable_con_apoyo", "alert_level": "optimo", "routine_change": false, "gastrointestinal_status": "normal", "observed_behavior": ["juego_funcional"], "exceptional_event": false, "sensory_profile_snapshot": ["hipersensibilidad_auditiva"]}},
+    {"recorded_at": "2026-08-15T08:00:00+00:00", "source": "FAMILY", "context": "HOME", "features": {"sleep_quality": "reparador", "sleep_hours": 8.0, "regulation_level": "estable_con_apoyo", "alert_level": "optimo", "routine_change": false, "gastrointestinal_status": "normal", "observed_behavior": ["juego_funcional"], "exceptional_event": false, "sensory_profile_snapshot": ["hipersensibilidad_auditiva"]}},
+    {"recorded_at": "2026-08-16T08:00:00+00:00", "source": "FAMILY", "context": "HOME", "features": {"sleep_quality": "reparador", "sleep_hours": 8.0, "regulation_level": "estable_con_apoyo", "alert_level": "optimo", "routine_change": false, "gastrointestinal_status": "normal", "observed_behavior": ["juego_funcional"], "exceptional_event": false, "sensory_profile_snapshot": ["hipersensibilidad_auditiva"]}},
+    {"recorded_at": "2026-08-17T08:00:00+00:00", "source": "FAMILY", "context": "HOME", "features": {"sleep_quality": "reparador", "sleep_hours": 8.0, "regulation_level": "estable_con_apoyo", "alert_level": "optimo", "routine_change": false, "gastrointestinal_status": "normal", "observed_behavior": ["juego_funcional"], "exceptional_event": false, "sensory_profile_snapshot": ["hipersensibilidad_auditiva"]}},
+    {"recorded_at": "2026-08-18T08:00:00+00:00", "source": "FAMILY", "context": "HOME", "features": {"sleep_quality": "reparador", "sleep_hours": 8.0, "regulation_level": "estable_con_apoyo", "alert_level": "optimo", "routine_change": false, "gastrointestinal_status": "normal", "observed_behavior": ["juego_funcional"], "exceptional_event": false, "sensory_profile_snapshot": ["hipersensibilidad_auditiva"]}},
+    {"recorded_at": "2026-08-19T08:00:00+00:00", "source": "FAMILY", "context": "HOME", "features": {"sleep_quality": "interrumpido", "sleep_hours": 5.5, "regulation_level": "desregulacion_frecuente", "alert_level": "alto", "routine_change": true, "gastrointestinal_status": "normal", "observed_behavior": ["ruido_intenso", "sobrecarga_sensorial"], "exceptional_event": false, "sensory_profile_snapshot": ["hipersensibilidad_auditiva"]}}
+  ],
+  "events": [],
+  "expected": {"status": "LOW_CONFIDENCE", "risk_null": false, "risk_level": ["LOW", "MEDIUM", "HIGH"], "confidence_level": "LOW", "required_factor_codes": []}
+}

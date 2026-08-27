@@ -1,0 +1,17 @@
+name: contract-change
+version: 1
+owner: architect
+steps:
+  - state_problem_and_consumers
+  - classify_change_as_compatible_or_breaking
+  - inspect_mobile_api_predictor_impacts
+  - update_or_create_adr_if_architectural
+  - modify_contract_source_of_truth
+  - update_contract_examples_and_tests
+  - create_consumer_migration_tasks
+  - implement_consumers_in_separate_owned_changes
+  - run_full_contract_suite
+  - request_reviewer
+rules:
+  local_dto_override: forbidden
+  breaking_change_without_migration_plan: forbidden

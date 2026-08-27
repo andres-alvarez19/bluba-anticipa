@@ -1,0 +1,9 @@
+[project]
+name = "bluba-predictor"
+version = "0.1.0"
+description = "Predictor package for Bluba Anticipa MVP bootstrap."
+requires-python = ">=3.11"
+dependencies = []
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]

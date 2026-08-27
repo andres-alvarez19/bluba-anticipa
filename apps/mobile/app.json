@@ -1,0 +1,10 @@
+{
+  "expo": {
+    "name": "Bluba Anticipa",
+    "slug": "bluba-anticipa",
+    "scheme": "blubaanticipa",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "platforms": ["ios", "android"]
+  }
+}

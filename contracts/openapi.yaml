@@ -1,0 +1,2338 @@
+openapi: 3.1.0
+info:
+  title: Bluba Anticipa API
+  version: 0.1.0-mvp
+  summary: Contrato unificado Frontend móvil ↔ Backend ↔ motor predictivo para NeuroHack 2026.
+  description: 'API del MVP de Bluba Anticipa. Define los contratos externos consumidos por la app móvil y un contrato interno
+    opcional para invocar el motor predictivo. El sistema es una herramienta de apoyo preventivo; los scores del MVP son índices
+    demostrativos y no probabilidades clínicas validadas.
+
+
+    Principios del contrato: control de acceso por rol, riesgo y confianza separados, explicabilidad, datos faltantes explícitos,
+    confirmación humana de observaciones estructuradas y recomendaciones provenientes de fuentes controladas.'
+servers:
+- url: http://localhost:8080
+  description: Desarrollo local
+- url: https://api.example.bluba.cl
+  description: Placeholder de despliegue del MVP
+tags:
+- name: Auth
+  description: Autenticación/contexto demostrativo del MVP.
+- name: Context
+  description: Contexto y recursos autorizados del usuario.
+- name: Children
+  description: Estado preventivo y recursos longitudinales por niño.
+- name: Capture
+  description: Check-in y estructuración de observaciones por texto/voz.
+- name: Predictions
+  description: Riesgo, confianza, explicabilidad y feedback.
+- name: Recommendations
+  description: Estrategias preventivas provenientes de fuentes controladas.
+- name: Events
+  description: Registro de escaladas/desregulaciones.
+- name: Interventions
+  description: Aplicación y resultado de estrategias.
+- name: Education
+  description: Contratos específicos para contexto escolar.
+- name: Professionals
+  description: Contratos específicos para especialistas.
+- name: Internal ML
+  description: Contrato interno Backend ↔ motor predictivo. No expuesto a clientes móviles.
+security:
+- bearerAuth: []
+paths:
+  /v1/auth/session:
+    post:
+      tags:
+      - Auth
+      operationId: createDemoSession
+      summary: Crear sesión demostrativa por rol
+      description: Endpoint del MVP. No pretende modelar autenticación productiva completa.
+      security: []
+      x-traceability:
+        user_stories:
+        - HU-TR-01
+        requirements:
+        - RF-TR-01
+        - RF-TR-02
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DemoSessionRequest'
+      responses:
+        '200':
+          description: Sesión creada.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SessionResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /v1/me/context:
+    get:
+      tags:
+      - Context
+      operationId: getMyContext
+      summary: Obtener rol, permisos y recursos autorizados
+      x-traceability:
+        user_stories:
+        - HU-TR-01
+        - HU-TR-02
+        - HU-COL-04
+        requirements:
+        - RF-TR-03
+        - RF-TR-04
+        - RF-COL-04
+      responses:
+        '200':
+          description: Contexto del usuario.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserContext'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /v1/children:
+    get:
+      tags:
+      - Children
+      operationId: listAuthorizedChildren
+      summary: Listar niños/pacientes autorizados
+      x-traceability:
+        user_stories:
+        - HU-TR-02
+        requirements:
+        - RF-TR-04
+        - RF-TR-05
+      responses:
+        '200':
+          description: Lista filtrada por autorización.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ChildSummary'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /v1/children/{childId}/preventive-status:
+    get:
+      tags:
+      - Children
+      operationId: getPreventiveStatus
+      summary: Obtener estado preventivo compuesto adaptado al rol
+      parameters:
+      - $ref: '#/components/parameters/ChildId'
+      x-traceability:
+        user_stories:
+        - HU-TR-03
+        - HU-FAM-07
+        - HU-FAM-08
+        - HU-FAM-10
+        - HU-EDU-04
+        requirements:
+        - RF-TR-06
+        - RF-TR-07
+        - RF-PRED-15
+      responses:
+        '200':
+          description: Estado preventivo vigente.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PreventiveStatus'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /v1/children/{childId}/risk-predictions/current:
+    get:
+      tags:
+      - Predictions
+      operationId: getCurrentRiskPrediction
+      summary: Obtener predicción vigente de riesgo y confianza
+      description: En INSUFFICIENT_DATA, risk.score y risk.level son null. Los niveles son calculados por Backend/Data-ML;
+        el Frontend no replica thresholds.
+      parameters:
+      - $ref: '#/components/parameters/ChildId'
+      x-traceability:
+        user_stories:
+        - HU-TR-04
+        - HU-TR-05
+        - HU-TR-06
+        - HU-TR-07
+        - HU-ESP-08
+        - HU-ESP-09
+        - HU-ESP-10
+        requirements:
+        - RF-PRED-07
+        - RF-PRED-08
+        - RF-PRED-10
+        - RF-PRED-12
+        - RF-PRED-13
+        - RF-PRED-14
+      responses:
+        '200':
+          description: Predicción actual o estado de insuficiencia.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RiskPrediction'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /v1/children/{childId}/daily-records:
+    post:
+      tags:
+      - Capture
+      operationId: createDailyRecord
+      summary: Crear check-in/registro diario confirmado
+      parameters:
+      - $ref: '#/components/parameters/ChildId'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      x-traceability:
+        user_stories:
+        - HU-FAM-01
+        requirements:
+        - RF-CAP-01
+        - RF-FAM-01
+        - RF-PRED-15
+        - RNF-REL-04
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DailyRecordCreateRequest'
+      responses:
+        '201':
+          description: Registro persistido; el recálculo puede continuar de forma asincrónica.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DailyRecordResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /v1/observation-drafts/text:
+    post:
+      tags:
+      - Capture
+      operationId: createTextObservationDraft
+      summary: Estructurar una observación de texto sin persistirla como registro confirmado
+      parameters:
+      - $ref: '#/components/parameters/IdempotencyKey'
+      x-traceability:
+        user_stories:
+        - HU-FAM-02
+        - HU-FAM-04
+        - HU-EDU-10
+        requirements:
+        - RF-CAP-02
+        - RF-CAP-04
+        - RF-CAP-05
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TextObservationDraftRequest'
+      responses:
+        '201':
+          description: Borrador pendiente de confirmación.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ObservationDraft'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /v1/observation-drafts/audio:
+    post:
+      tags:
+      - Capture
+      operationId: createAudioObservationDraft
+      summary: Transcribir y estructurar una nota de voz sin confirmar
+      parameters:
+      - $ref: '#/components/parameters/IdempotencyKey'
+      x-traceability:
+        user_stories:
+        - HU-FAM-03
+        - HU-EDU-09
+        requirements:
+        - RF-CAP-03
+        - RF-CAP-04
+        - RF-CAP-05
+        - RNF-REL-01
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required:
+              - child_id
+              - context
+              - audio
+              properties:
+                child_id:
+                  type: string
+                context:
+                  $ref: '#/components/schemas/UsageContext'
+                audio:
+                  type: string
+                  format: binary
+                mime_type:
+                  type:
+                  - string
+                  - 'null'
+                  example: audio/m4a
+      responses:
+        '201':
+          description: Borrador con transcripción/variables propuestas.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ObservationDraft'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /v1/observation-drafts/{draftId}:
+    patch:
+      tags:
+      - Capture
+      operationId: patchObservationDraft
+      summary: Corregir variables propuestas antes de confirmar
+      parameters:
+      - $ref: '#/components/parameters/DraftId'
+      x-traceability:
+        user_stories:
+        - HU-FAM-05
+        - HU-EDU-10
+        requirements:
+        - RF-CAP-07
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ObservationDraftPatchRequest'
+      responses:
+        '200':
+          description: Borrador actualizado.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ObservationDraft'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /v1/observation-drafts/{draftId}/confirm:
+    post:
+      tags:
+      - Capture
+      operationId: confirmObservationDraft
+      summary: Confirmar borrador y convertirlo en registro longitudinal
+      parameters:
+      - $ref: '#/components/parameters/DraftId'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      x-traceability:
+        user_stories:
+        - HU-FAM-04
+        - HU-FAM-05
+        - HU-EDU-10
+        - HU-SEG-02
+        requirements:
+        - RF-CAP-05
+        - RF-CAP-06
+        - RF-CAP-08
+        - RNF-AI-03
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ConfirmObservationDraftRequest'
+      responses:
+        '201':
+          description: Registro definitivo creado con procedencia AI_EXTRACTED_HUMAN_CONFIRMED.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DailyRecordResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /v1/children/{childId}/recommendations:
+    get:
+      tags:
+      - Recommendations
+      operationId: getRecommendations
+      summary: Obtener recomendaciones seguras por contexto
+      parameters:
+      - $ref: '#/components/parameters/ChildId'
+      - name: context
+        in: query
+        required: true
+        schema:
+          $ref: '#/components/schemas/RecommendationContext'
+      x-traceability:
+        user_stories:
+        - HU-FAM-11
+        - HU-FAM-12
+        - HU-EDU-05
+        - HU-SEG-04
+        requirements:
+        - RF-FAM-06
+        - RF-FAM-07
+        - RF-EDU-05
+        - RF-SEG-04
+        - RF-SEG-05
+      responses:
+        '200':
+          description: Estrategias filtradas por contexto y fuentes controladas.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RecommendationsResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /v1/children/{childId}/dysregulation-events:
+    post:
+      tags:
+      - Events
+      operationId: createDysregulationEvent
+      summary: Registrar una escalada o desregulación con payload mínimo
+      parameters:
+      - $ref: '#/components/parameters/ChildId'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      x-traceability:
+        user_stories:
+        - HU-EDU-06
+        - HU-EDU-07
+        - HU-EDU-08
+        requirements:
+        - RF-EDU-06
+        - RF-EDU-07
+        - RF-EDU-08
+        - RNF-OFF-01
+        - RNF-REL-04
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DysregulationEventCreateRequest'
+      responses:
+        '201':
+          description: Evento aceptado/persistido.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DysregulationEventResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /v1/children/{childId}/interventions:
+    get:
+      tags:
+      - Interventions
+      operationId: getInterventionHistory
+      summary: Obtener historial de intervenciones y resultados
+      parameters:
+      - $ref: '#/components/parameters/ChildId'
+      x-traceability:
+        user_stories:
+        - HU-ESP-13
+        - HU-ESP-14
+        requirements:
+        - RF-ESP-12
+        - RF-ESP-13
+      responses:
+        '200':
+          description: Historial autorizado.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InterventionHistoryResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/ServerError'
+    post:
+      tags:
+      - Interventions
+      operationId: createIntervention
+      summary: Registrar estrategia aplicada
+      parameters:
+      - $ref: '#/components/parameters/ChildId'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      x-traceability:
+        user_stories:
+        - HU-FAM-15
+        requirements:
+        - RF-FAM-10
+        - RNF-REL-04
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InterventionCreateRequest'
+      responses:
+        '201':
+          description: Intervención registrada.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Intervention'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /v1/interventions/{interventionId}/result:
+    post:
+      tags:
+      - Interventions
+      operationId: createInterventionResult
+      summary: Registrar resultado de una estrategia
+      parameters:
+      - $ref: '#/components/parameters/InterventionId'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      x-traceability:
+        user_stories:
+        - HU-FAM-16
+        requirements:
+        - RF-FAM-11
+        - RNF-REL-04
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InterventionResultCreateRequest'
+      responses:
+        '201':
+          description: Resultado asociado a la intervención.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InterventionResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /v1/risk-predictions/{predictionId}/feedback:
+    post:
+      tags:
+      - Predictions
+      operationId: createPredictionFeedback
+      summary: Registrar si ocurrió desregulación dentro de la ventana evaluada
+      parameters:
+      - $ref: '#/components/parameters/PredictionId'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      x-traceability:
+        user_stories:
+        - HU-FAM-14
+        requirements:
+        - RF-FAM-09
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PredictionFeedbackRequest'
+      responses:
+        '201':
+          description: Feedback vinculado a la predicción exacta.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PredictionFeedbackResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /v1/classrooms/{classroomId}/students/preventive-status:
+    get:
+      tags:
+      - Education
+      operationId: getClassroomPreventiveStatus
+      summary: Resumen matutino del aula
+      description: DTO funcional filtrado por rol; no debe incluir notas clínicas o familiares no necesarias.
+      parameters:
+      - $ref: '#/components/parameters/ClassroomId'
+      x-traceability:
+        user_stories:
+        - HU-EDU-01
+        - HU-EDU-02
+        - HU-EDU-03
+        requirements:
+        - RF-EDU-01
+        - RF-EDU-02
+        - RF-EDU-03
+        - RF-COL-04
+      responses:
+        '200':
+          description: Estudiantes autorizados con estado preventivo resumido.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ClassroomPreventiveStatusResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /v1/professionals/me/patients/preventive-status:
+    get:
+      tags:
+      - Professionals
+      operationId: getMyPatientsPreventiveStatus
+      summary: Listar pacientes autorizados con estado preventivo reciente
+      x-traceability:
+        user_stories:
+        - HU-ESP-01
+        - HU-ESP-02
+        requirements:
+        - RF-ESP-01
+        - RF-ESP-02
+      responses:
+        '200':
+          description: Pacientes autorizados, incluyendo vigencia y señal de desviación individual.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProfessionalPatientsStatusResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /v1/children/{childId}/baseline:
+    get:
+      tags:
+      - Professionals
+      operationId: getChildBaseline
+      summary: Obtener baseline individual
+      parameters:
+      - $ref: '#/components/parameters/ChildId'
+      x-traceability:
+        user_stories:
+        - HU-ESP-03
+        - HU-ESP-04
+        requirements:
+        - RF-ESP-03
+        - RF-ESP-04
+        - RF-PRED-01
+        - RF-PRED-02
+      responses:
+        '200':
+          description: Baseline individual; nunca sustituido silenciosamente por norma poblacional.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BaselineSnapshot'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /v1/children/{childId}/analytics/recent:
+    get:
+      tags:
+      - Professionals
+      operationId: getRecentAnalytics
+      summary: Obtener tendencias y acumulaciones recientes
+      parameters:
+      - $ref: '#/components/parameters/ChildId'
+      - name: window
+        in: query
+        required: false
+        schema:
+          type: string
+          enum:
+          - 24h
+          - 72h
+          - 7d
+          default: 72h
+      x-traceability:
+        user_stories:
+        - HU-ESP-04
+        - HU-ESP-05
+        requirements:
+        - RF-ESP-04
+        - RF-ESP-05
+        - RF-PRED-03
+        - RF-PRED-04
+      responses:
+        '200':
+          description: Analítica reciente contra baseline.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RecentAnalytics'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /v1/children/{childId}/timeline:
+    get:
+      tags:
+      - Children
+      operationId: getChildTimeline
+      summary: Obtener línea temporal autorizada
+      parameters:
+      - $ref: '#/components/parameters/ChildId'
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 200
+          default: 50
+      x-traceability:
+        user_stories:
+        - HU-TR-08
+        - HU-TR-09
+        requirements:
+        - RF-TR-08
+        - RF-TR-09
+        - RF-COL-01
+        - RF-COL-06
+      responses:
+        '200':
+          description: Timeline filtrada por permisos.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TimelineResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /v1/children/{childId}/professional-sessions:
+    post:
+      tags:
+      - Professionals
+      operationId: createProfessionalSession
+      summary: Registrar observación de sesión profesional
+      parameters:
+      - $ref: '#/components/parameters/ChildId'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      x-traceability:
+        user_stories:
+        - HU-ESP-17
+        requirements:
+        - RF-ESP-16
+        - RF-PRED-15
+        - RNF-REL-04
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProfessionalSessionCreateRequest'
+      responses:
+        '201':
+          description: Sesión registrada y recálculo solicitado si corresponde.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProfessionalSessionResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /internal/v1/predictions:evaluate:
+    post:
+      tags:
+      - Internal ML
+      operationId: evaluatePredictionInternal
+      summary: Evaluar snapshot canónico en el motor predictivo
+      description: Transporte HTTP opcional del contrato Backend ↔ Data/ML. Si el motor se ejecuta in-process o por mensajería,
+        deben conservarse las mismas formas de PredictionEngineInput/PredictionEngineOutput. El motor no debe recibir features
+        con timestamp posterior a prediction_at.
+      security:
+      - serviceBearerAuth: []
+      x-internal: true
+      x-traceability:
+        user_stories: []
+        requirements:
+        - RF-PRED-01
+        - RF-PRED-04
+        - RF-PRED-05
+        - RF-PRED-06
+        - RF-PRED-08
+        - RF-PRED-10
+        - RNF-AI-04
+        - RNF-MNT-03
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PredictionEngineInput'
+      responses:
+        '200':
+          description: Predicción versionada.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PredictionEngineOutput'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/ServerError'
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Token de sesión. En el MVP puede ser un token demostrativo; la autorización siempre se aplica en Backend.
+    serviceBearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Token servicio-a-servicio para el endpoint interno del motor predictivo.
+  parameters:
+    ChildId:
+      name: childId
+      in: path
+      required: true
+      schema:
+        type: string
+        minLength: 1
+      example: CH-002
+    DraftId:
+      name: draftId
+      in: path
+      required: true
+      schema:
+        type: string
+        minLength: 1
+      example: draft_001
+    PredictionId:
+      name: predictionId
+      in: path
+      required: true
+      schema:
+        type: string
+        minLength: 1
+      example: RPR-00451
+    InterventionId:
+      name: interventionId
+      in: path
+      required: true
+      schema:
+        type: string
+        minLength: 1
+      example: PIN-0098
+    ClassroomId:
+      name: classroomId
+      in: path
+      required: true
+      schema:
+        type: string
+        minLength: 1
+      example: CLS-01
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: false
+      description: Recomendado para escrituras originadas desde el cliente móvil/offline. Repetir la misma clave no debe crear
+        duplicados.
+      schema:
+        type: string
+        minLength: 8
+        maxLength: 128
+  schemas:
+    Role:
+      type: string
+      enum:
+      - FAMILY
+      - EDUCATOR
+      - PROFESSIONAL
+    UsageContext:
+      type: string
+      enum:
+      - HOME
+      - SCHOOL
+      - PROFESSIONAL
+    RecordSource:
+      type: string
+      enum:
+      - FAMILY
+      - SCHOOL
+      - PROFESSIONAL
+    PersistenceStatus:
+      type: string
+      enum:
+      - PERSISTED
+      - PENDING_SYNC
+      - SYNCED
+    RiskLevel:
+      type:
+      - string
+      - 'null'
+      enum:
+      - LOW
+      - MEDIUM
+      - HIGH
+      - null
+    ConfidenceLevel:
+      type: string
+      enum:
+      - LOW
+      - MEDIUM
+      - HIGH
+    PredictionStatus:
+      type: string
+      enum:
+      - OK
+      - LOW_CONFIDENCE
+      - INSUFFICIENT_DATA
+      - ERROR
+    BaselineStatus:
+      type: string
+      enum:
+      - BUILDING
+      - PROVISIONAL
+      - SUFFICIENT
+    FactorDirection:
+      type: string
+      enum:
+      - INCREASES_RISK
+      - DECREASES_RISK
+      - NEUTRAL
+    FactorType:
+      type: string
+      enum:
+      - DEVIATION
+      - ACCUMULATION
+      - CONTEXT
+      - HISTORY
+      - DATA_QUALITY
+    MissingDataState:
+      type: string
+      enum:
+      - MISSING
+      - STALE
+    WarningSeverity:
+      type: string
+      enum:
+      - INFO
+      - WARNING
+      - ERROR
+    RecommendationContext:
+      type: string
+      enum:
+      - HOME
+      - SCHOOL
+    RecommendationSource:
+      type: string
+      enum:
+      - PROFESSIONAL_APPROVED
+      - HISTORICAL_SUCCESS
+      - VALIDATED_CATALOG
+    InterventionOutcome:
+      type: string
+      enum:
+      - SUCCESS
+      - PARTIAL
+      - NO_EFFECT
+      description: Vocabulario público P0. El Backend puede mapear SUCCESS→EFFECTIVE y PARTIAL→PARTIALLY_EFFECTIVE si su modelo
+        de dominio conserva esos nombres.
+    ObservationInputType:
+      type: string
+      enum:
+      - TEXT
+      - AUDIO
+    ObservationDraftStatus:
+      type: string
+      enum:
+      - PENDING_CONFIRMATION
+      - CONFIRMED
+      - DISCARDED
+    ObservationProvenance:
+      type: string
+      enum:
+      - HUMAN_STRUCTURED
+      - AI_EXTRACTED_HUMAN_CONFIRMED
+    DysregulationEventType:
+      type: string
+      enum:
+      - ESCALATION
+      - DYSREGULATION
+    ProblemDetails:
+      type: object
+      required:
+      - code
+      - message
+      properties:
+        code:
+          type: string
+          example: FORBIDDEN_CHILD_ACCESS
+        message:
+          type: string
+          example: No tiene acceso al niño solicitado.
+        trace_id:
+          type:
+          - string
+          - 'null'
+        field_errors:
+          type: array
+          items:
+            type: object
+            required:
+            - field
+            - message
+            properties:
+              field:
+                type: string
+              message:
+                type: string
+          default: []
+      additionalProperties: false
+    DemoSessionRequest:
+      type: object
+      required:
+      - role
+      properties:
+        role:
+          $ref: '#/components/schemas/Role'
+        demo_user_key:
+          type:
+          - string
+          - 'null'
+          description: Selector opcional de identidad demo.
+      additionalProperties: false
+    SessionResponse:
+      type: object
+      required:
+      - access_token
+      - token_type
+      - user_id
+      - role
+      properties:
+        access_token:
+          type: string
+        token_type:
+          type: string
+          const: Bearer
+        expires_in_seconds:
+          type: integer
+          minimum: 60
+          default: 3600
+        user_id:
+          type: string
+        role:
+          $ref: '#/components/schemas/Role'
+      additionalProperties: false
+    ChildSummary:
+      type: object
+      required:
+      - id
+      - display_name
+      properties:
+        id:
+          type: string
+        display_name:
+          type: string
+        relationship_contexts:
+          type: array
+          items:
+            $ref: '#/components/schemas/UsageContext'
+      additionalProperties: false
+    UserContext:
+      type: object
+      required:
+      - user_id
+      - role
+      - children
+      properties:
+        user_id:
+          type: string
+        role:
+          $ref: '#/components/schemas/Role'
+        children:
+          type: array
+          items:
+            $ref: '#/components/schemas/ChildSummary'
+        classrooms:
+          type: array
+          items:
+            type: object
+            required:
+            - id
+            - name
+            properties:
+              id:
+                type: string
+              name:
+                type: string
+            additionalProperties: false
+          default: []
+        permissions:
+          type: array
+          items:
+            type: string
+          default: []
+      additionalProperties: false
+    SleepQuality:
+      type:
+      - string
+      - 'null'
+      enum:
+      - reparador
+      - interrumpido
+      - dificultad_conciliacion
+      - desconocido
+      - null
+    WakeState:
+      type:
+      - string
+      - 'null'
+      enum:
+      - tranquilo_alegre
+      - irritable_llorando
+      - cansado_sueno
+      - desconocido
+      - null
+    RegulationLevel:
+      type:
+      - string
+      - 'null'
+      enum:
+      - excelente
+      - estable_con_apoyo
+      - desregulacion_frecuente
+      - desconocido
+      - null
+    AlertLevel:
+      type:
+      - string
+      - 'null'
+      enum:
+      - bajo
+      - optimo
+      - alto
+      - desconocido
+      - null
+    CanonicalDailyFeatures:
+      type: object
+      properties:
+        sleep_quality:
+          $ref: '#/components/schemas/SleepQuality'
+        sleep_hours:
+          type:
+          - number
+          - 'null'
+          minimum: 0
+          maximum: 24
+        wake_state:
+          $ref: '#/components/schemas/WakeState'
+        regulation_level:
+          $ref: '#/components/schemas/RegulationLevel'
+        alert_level:
+          $ref: '#/components/schemas/AlertLevel'
+        routine_change:
+          type:
+          - boolean
+          - 'null'
+        gastrointestinal_status:
+          type:
+          - string
+          - 'null'
+          maxLength: 64
+        observed_behavior:
+          type: array
+          items:
+            type: string
+          default: []
+        exceptional_event:
+          type:
+          - boolean
+          - 'null'
+        sensory_profile:
+          type: array
+          items:
+            type: string
+          default: []
+      additionalProperties: false
+    DailyRecordCreateRequest:
+      type: object
+      required:
+      - recorded_at
+      - source
+      - features
+      properties:
+        recorded_at:
+          type: string
+          format: date-time
+        source:
+          $ref: '#/components/schemas/RecordSource'
+        context:
+          $ref: '#/components/schemas/UsageContext'
+        features:
+          $ref: '#/components/schemas/CanonicalDailyFeatures'
+        notes:
+          type:
+          - string
+          - 'null'
+          maxLength: 2000
+        provenance:
+          $ref: '#/components/schemas/ObservationProvenance'
+      additionalProperties: false
+    DailyRecordResponse:
+      type: object
+      required:
+      - record_id
+      - child_id
+      - recorded_at
+      - source
+      - persistence_status
+      - risk_recalculation_requested
+      properties:
+        record_id:
+          type: string
+        child_id:
+          type: string
+        recorded_at:
+          type: string
+          format: date-time
+        source:
+          $ref: '#/components/schemas/RecordSource'
+        persistence_status:
+          $ref: '#/components/schemas/PersistenceStatus'
+        risk_recalculation_requested:
+          type: boolean
+        risk_recalculation_request_id:
+          type:
+          - string
+          - 'null'
+      additionalProperties: false
+    ProposedVariable:
+      type: object
+      required:
+      - field
+      - value
+      properties:
+        field:
+          type: string
+        value: {}
+        evidence:
+          type:
+          - string
+          - 'null'
+        confidence:
+          type:
+          - number
+          - 'null'
+          minimum: 0
+          maximum: 1
+      additionalProperties: false
+    ObservationDraft:
+      type: object
+      required:
+      - draft_id
+      - child_id
+      - context
+      - input_type
+      - proposed_variables
+      - status
+      properties:
+        draft_id:
+          type: string
+        child_id:
+          type: string
+        context:
+          $ref: '#/components/schemas/UsageContext'
+        input_type:
+          $ref: '#/components/schemas/ObservationInputType'
+        source_text:
+          type:
+          - string
+          - 'null'
+        transcription:
+          type:
+          - string
+          - 'null'
+        proposed_variables:
+          type: array
+          items:
+            $ref: '#/components/schemas/ProposedVariable'
+        status:
+          $ref: '#/components/schemas/ObservationDraftStatus'
+        expires_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+      additionalProperties: false
+    TextObservationDraftRequest:
+      type: object
+      required:
+      - child_id
+      - context
+      - text
+      properties:
+        child_id:
+          type: string
+        context:
+          $ref: '#/components/schemas/UsageContext'
+        text:
+          type: string
+          minLength: 1
+          maxLength: 4000
+      additionalProperties: false
+    ObservationDraftPatchRequest:
+      type: object
+      required:
+      - proposed_variables
+      properties:
+        proposed_variables:
+          type: array
+          items:
+            $ref: '#/components/schemas/ProposedVariable'
+      additionalProperties: false
+    ConfirmObservationDraftRequest:
+      type: object
+      properties:
+        recorded_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+          description: Si se omite, Backend usa el momento confirmado según política del MVP.
+        notes:
+          type:
+          - string
+          - 'null'
+          maxLength: 2000
+      additionalProperties: false
+    RiskValue:
+      type:
+      - object
+      - 'null'
+      required:
+      - score
+      - level
+      properties:
+        score:
+          type:
+          - number
+          - 'null'
+          minimum: 0
+          maximum: 1
+          description: Índice interno del motor. No implica probabilidad clínica calibrada.
+        level:
+          $ref: '#/components/schemas/RiskLevel'
+      additionalProperties: false
+    ConfidenceValue:
+      type: object
+      required:
+      - score
+      - level
+      properties:
+        score:
+          type: number
+          minimum: 0
+          maximum: 1
+        level:
+          $ref: '#/components/schemas/ConfidenceLevel'
+      additionalProperties: false
+    TopFactor:
+      type: object
+      required:
+      - code
+      - label
+      properties:
+        code:
+          type: string
+          example: SLEEP_ALTERED_3D
+        label:
+          type: string
+          example: Sueño alterado durante 3 días
+        direction:
+          $ref: '#/components/schemas/FactorDirection'
+        window:
+          type:
+          - string
+          - 'null'
+          example: 72h
+        type:
+          $ref: '#/components/schemas/FactorType'
+        contribution:
+          type:
+          - number
+          - 'null'
+          description: Magnitud explicativa opcional propia del motor; no se interpreta como causalidad.
+      additionalProperties: false
+    MissingDataItem:
+      type: object
+      required:
+      - field
+      - state
+      properties:
+        field:
+          type: string
+          example: sleep_quality
+        state:
+          $ref: '#/components/schemas/MissingDataState'
+        priority:
+          type: integer
+          minimum: 1
+          maximum: 5
+          default: 3
+        reason:
+          type:
+          - string
+          - 'null'
+      additionalProperties: false
+    DataQuality:
+      type: object
+      required:
+      - completeness
+      - history_days
+      - sources
+      - missing_fields
+      properties:
+        completeness:
+          type: number
+          minimum: 0
+          maximum: 1
+        critical_present:
+          type:
+          - integer
+          - 'null'
+          minimum: 0
+        critical_total:
+          type:
+          - integer
+          - 'null'
+          minimum: 0
+        hours_since_last_record:
+          type:
+          - number
+          - 'null'
+          minimum: 0
+        history_days:
+          type: integer
+          minimum: 0
+        sources:
+          type: array
+          items:
+            $ref: '#/components/schemas/RecordSource'
+        missing_fields:
+          type: array
+          items:
+            type: string
+        missing_critical_data:
+          type: array
+          items:
+            $ref: '#/components/schemas/MissingDataItem'
+          default: []
+        contains_synthetic_data:
+          type: boolean
+          default: false
+      additionalProperties: false
+    PredictionWarning:
+      type: object
+      required:
+      - code
+      - severity
+      - message
+      properties:
+        code:
+          type: string
+        severity:
+          $ref: '#/components/schemas/WarningSeverity'
+        message:
+          type: string
+      additionalProperties: false
+    RiskPrediction:
+      type: object
+      required:
+      - prediction_id
+      - child_id
+      - prediction_at
+      - window_end_at
+      - horizon_hours
+      - model_version
+      - feature_schema_version
+      - status
+      - risk
+      - confidence
+      - top_factors
+      - data_quality
+      - warnings
+      properties:
+        prediction_id:
+          type: string
+        child_id:
+          type: string
+        prediction_at:
+          type: string
+          format: date-time
+        window_end_at:
+          type: string
+          format: date-time
+        horizon_hours:
+          type: integer
+          const: 24
+        model_version:
+          type: string
+          example: hybrid-mvp-v1
+        feature_schema_version:
+          type: string
+          example: features-mvp-v1
+        status:
+          $ref: '#/components/schemas/PredictionStatus'
+        risk:
+          $ref: '#/components/schemas/RiskValue'
+        confidence:
+          $ref: '#/components/schemas/ConfidenceValue'
+        top_factors:
+          type: array
+          items:
+            $ref: '#/components/schemas/TopFactor'
+        data_quality:
+          $ref: '#/components/schemas/DataQuality'
+        warnings:
+          type: array
+          items:
+            $ref: '#/components/schemas/PredictionWarning'
+        required_fields:
+          type: array
+          items:
+            type: string
+          default: []
+      additionalProperties: false
+    PredictionFeedbackRequest:
+      type: object
+      required:
+      - dysregulation_occurred
+      properties:
+        dysregulation_occurred:
+          type: boolean
+        evaluated_at:
+          type: string
+          format: date-time
+        notes:
+          type:
+          - string
+          - 'null'
+          maxLength: 2000
+      additionalProperties: false
+    PredictionFeedbackResponse:
+      type: object
+      required:
+      - feedback_id
+      - prediction_id
+      - dysregulation_occurred
+      - created_at
+      properties:
+        feedback_id:
+          type: string
+        prediction_id:
+          type: string
+        dysregulation_occurred:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+      additionalProperties: false
+    BaselineMetric:
+      type: object
+      required:
+      - key
+      - kind
+      properties:
+        key:
+          type: string
+        kind:
+          type: string
+          enum:
+          - NUMERIC
+          - CATEGORICAL
+        median:
+          type:
+          - number
+          - 'null'
+        robust_dispersion:
+          type:
+          - number
+          - 'null'
+        mode:
+          type:
+          - string
+          - 'null'
+        distribution:
+          type: object
+          additionalProperties:
+            type: number
+          default: {}
+        valid_observations:
+          type: integer
+          minimum: 0
+      additionalProperties: false
+    BaselineSnapshot:
+      type: object
+      required:
+      - child_id
+      - status
+      - valid_days
+      - reference_window_days
+      - cutoff_at
+      - metrics
+      properties:
+        child_id:
+          type: string
+        status:
+          $ref: '#/components/schemas/BaselineStatus'
+        valid_days:
+          type: integer
+          minimum: 0
+        reference_window_days:
+          type: integer
+          const: 14
+        cutoff_at:
+          type: string
+          format: date-time
+        metrics:
+          type: array
+          items:
+            $ref: '#/components/schemas/BaselineMetric'
+      additionalProperties: false
+    Accumulation:
+      type: object
+      required:
+      - code
+      - label
+      - window
+      - magnitude
+      properties:
+        code:
+          type: string
+        label:
+          type: string
+        window:
+          type: string
+        magnitude:
+          type: number
+        unit:
+          type:
+          - string
+          - 'null'
+        direction:
+          $ref: '#/components/schemas/FactorDirection'
+      additionalProperties: false
+    RecentAnalytics:
+      type: object
+      required:
+      - child_id
+      - window
+      - generated_at
+      - accumulations
+      properties:
+        child_id:
+          type: string
+        window:
+          type: string
+          enum:
+          - 24h
+          - 72h
+          - 7d
+        generated_at:
+          type: string
+          format: date-time
+        accumulations:
+          type: array
+          items:
+            $ref: '#/components/schemas/Accumulation'
+        recent_vs_baseline:
+          type: array
+          items:
+            type: object
+            required:
+            - key
+            properties:
+              key:
+                type: string
+              recent_value: {}
+              baseline_value: {}
+              deviation:
+                type:
+                - number
+                - 'null'
+            additionalProperties: false
+      additionalProperties: false
+    Recommendation:
+      type: object
+      required:
+      - strategy_id
+      - name
+      - priority
+      - source
+      - contexts
+      - reason
+      properties:
+        strategy_id:
+          type: string
+        name:
+          type: string
+        priority:
+          type: integer
+          minimum: 1
+        source:
+          $ref: '#/components/schemas/RecommendationSource'
+        contexts:
+          type: array
+          items:
+            type: string
+            enum:
+            - HOME
+            - SCHOOL
+            - BOTH
+        reason:
+          type: string
+        instructions:
+          type:
+          - string
+          - 'null'
+        historical_evidence:
+          type:
+          - object
+          - 'null'
+          properties:
+            times_used:
+              type: integer
+              minimum: 0
+            successful_or_partial:
+              type: integer
+              minimum: 0
+          additionalProperties: false
+      additionalProperties: false
+    RecommendationsResponse:
+      type: object
+      required:
+      - child_id
+      - context
+      - recommendations
+      - generated_at
+      properties:
+        child_id:
+          type: string
+        context:
+          $ref: '#/components/schemas/RecommendationContext'
+        prediction_id:
+          type:
+          - string
+          - 'null'
+        recommendations:
+          type: array
+          items:
+            $ref: '#/components/schemas/Recommendation'
+          maxItems: 5
+        generated_at:
+          type: string
+          format: date-time
+      additionalProperties: false
+    InterventionCreateRequest:
+      type: object
+      required:
+      - strategy_id
+      - context
+      - applied_at
+      properties:
+        strategy_id:
+          type: string
+        context:
+          $ref: '#/components/schemas/RecommendationContext'
+        applied_at:
+          type: string
+          format: date-time
+        prediction_id:
+          type:
+          - string
+          - 'null'
+        event_id:
+          type:
+          - string
+          - 'null'
+        notes:
+          type:
+          - string
+          - 'null'
+          maxLength: 2000
+      additionalProperties: false
+    Intervention:
+      type: object
+      required:
+      - intervention_id
+      - child_id
+      - strategy_id
+      - context
+      - applied_at
+      properties:
+        intervention_id:
+          type: string
+        child_id:
+          type: string
+        strategy_id:
+          type: string
+        strategy_name:
+          type:
+          - string
+          - 'null'
+        context:
+          $ref: '#/components/schemas/RecommendationContext'
+        applied_at:
+          type: string
+          format: date-time
+        prediction_id:
+          type:
+          - string
+          - 'null'
+        event_id:
+          type:
+          - string
+          - 'null'
+        result:
+          oneOf:
+          - $ref: '#/components/schemas/InterventionResult'
+          - type: 'null'
+      additionalProperties: false
+    InterventionResultCreateRequest:
+      type: object
+      required:
+      - outcome
+      - recorded_at
+      properties:
+        outcome:
+          $ref: '#/components/schemas/InterventionOutcome'
+        recorded_at:
+          type: string
+          format: date-time
+        notes:
+          type:
+          - string
+          - 'null'
+          maxLength: 2000
+      additionalProperties: false
+    InterventionResult:
+      type: object
+      required:
+      - result_id
+      - intervention_id
+      - outcome
+      - recorded_at
+      properties:
+        result_id:
+          type: string
+        intervention_id:
+          type: string
+        outcome:
+          $ref: '#/components/schemas/InterventionOutcome'
+        recorded_at:
+          type: string
+          format: date-time
+        notes:
+          type:
+          - string
+          - 'null'
+      additionalProperties: false
+    InterventionHistoryResponse:
+      type: object
+      required:
+      - child_id
+      - items
+      properties:
+        child_id:
+          type: string
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Intervention'
+      additionalProperties: false
+    DysregulationEventCreateRequest:
+      type: object
+      required:
+      - occurred_at
+      - event_type
+      - context
+      properties:
+        occurred_at:
+          type: string
+          format: date-time
+        event_type:
+          $ref: '#/components/schemas/DysregulationEventType'
+        context:
+          $ref: '#/components/schemas/UsageContext'
+        notes:
+          type:
+          - string
+          - 'null'
+          maxLength: 2000
+        trigger_tags:
+          type: array
+          items:
+            type: string
+          default: []
+        strategy_id:
+          type:
+          - string
+          - 'null'
+      additionalProperties: false
+    DysregulationEventResponse:
+      type: object
+      required:
+      - event_id
+      - child_id
+      - occurred_at
+      - event_type
+      - context
+      - persistence_status
+      properties:
+        event_id:
+          type: string
+        child_id:
+          type: string
+        occurred_at:
+          type: string
+          format: date-time
+        event_type:
+          $ref: '#/components/schemas/DysregulationEventType'
+        context:
+          $ref: '#/components/schemas/UsageContext'
+        persistence_status:
+          $ref: '#/components/schemas/PersistenceStatus'
+        risk_recalculation_requested:
+          type: boolean
+          default: true
+      additionalProperties: false
+    PreventiveStatusSummary:
+      type: object
+      required:
+      - child_id
+      - display_name
+      - prediction_status
+      properties:
+        child_id:
+          type: string
+        display_name:
+          type: string
+        prediction_status:
+          $ref: '#/components/schemas/PredictionStatus'
+        risk:
+          $ref: '#/components/schemas/RiskValue'
+        confidence:
+          $ref: '#/components/schemas/ConfidenceValue'
+        valid_until:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        baseline_status:
+          $ref: '#/components/schemas/BaselineStatus'
+        deviation_signal:
+          type:
+          - number
+          - 'null'
+          description: Indicador resumido de desviación individual para priorización, no norma poblacional.
+        main_factors:
+          type: array
+          items:
+            $ref: '#/components/schemas/TopFactor'
+          maxItems: 4
+      additionalProperties: false
+    ClassroomPreventiveStatusResponse:
+      type: object
+      required:
+      - classroom_id
+      - generated_at
+      - students
+      properties:
+        classroom_id:
+          type: string
+        generated_at:
+          type: string
+          format: date-time
+        students:
+          type: array
+          items:
+            $ref: '#/components/schemas/PreventiveStatusSummary'
+      additionalProperties: false
+    ProfessionalPatientsStatusResponse:
+      type: object
+      required:
+      - generated_at
+      - patients
+      properties:
+        generated_at:
+          type: string
+          format: date-time
+        patients:
+          type: array
+          items:
+            $ref: '#/components/schemas/PreventiveStatusSummary'
+      additionalProperties: false
+    PreventiveStatus:
+      type: object
+      required:
+      - child_id
+      - generated_at
+      - prediction
+      - baseline
+      - recommendations
+      - disclaimer
+      properties:
+        child_id:
+          type: string
+        generated_at:
+          type: string
+          format: date-time
+        prediction:
+          $ref: '#/components/schemas/RiskPrediction'
+        baseline:
+          $ref: '#/components/schemas/BaselineSnapshot'
+        recommendations:
+          type: array
+          items:
+            $ref: '#/components/schemas/Recommendation'
+          maxItems: 5
+        disclaimer:
+          type: string
+          default: Estimación preventiva de apoyo; no corresponde a un diagnóstico.
+      additionalProperties: false
+    TimelineItem:
+      type: object
+      required:
+      - id
+      - type
+      - occurred_at
+      - source
+      - summary
+      properties:
+        id:
+          type: string
+        type:
+          type: string
+          enum:
+          - DAILY_RECORD
+          - PROFESSIONAL_SESSION
+          - DYSREGULATION_EVENT
+          - RISK_PREDICTION
+          - INTERVENTION
+          - INTERVENTION_RESULT
+        occurred_at:
+          type: string
+          format: date-time
+        source:
+          $ref: '#/components/schemas/RecordSource'
+        summary:
+          type: string
+        details:
+          type:
+          - object
+          - 'null'
+          additionalProperties: true
+      additionalProperties: false
+    TimelineResponse:
+      type: object
+      required:
+      - child_id
+      - items
+      properties:
+        child_id:
+          type: string
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/TimelineItem'
+      additionalProperties: false
+    ProfessionalSessionCreateRequest:
+      type: object
+      required:
+      - occurred_at
+      - observation
+      properties:
+        occurred_at:
+          type: string
+          format: date-time
+        observation:
+          type: string
+          minLength: 1
+          maxLength: 5000
+        structured_features:
+          oneOf:
+          - $ref: '#/components/schemas/CanonicalDailyFeatures'
+          - type: 'null'
+      additionalProperties: false
+    ProfessionalSessionResponse:
+      type: object
+      required:
+      - session_id
+      - child_id
+      - occurred_at
+      - created_at
+      - risk_recalculation_requested
+      properties:
+        session_id:
+          type: string
+        child_id:
+          type: string
+        occurred_at:
+          type: string
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
+        risk_recalculation_requested:
+          type: boolean
+      additionalProperties: false
+    DerivedFeatures:
+      type: object
+      required:
+      - sleep_altered_days_3d
+      - wake_adverse_days_3d
+      - low_regulation_days_3d
+      - dysregulation_events_7d
+      - adverse_factor_count_current
+      - alert_outside_optimal
+      properties:
+        sleep_altered_days_3d:
+          type: integer
+          minimum: 0
+          maximum: 3
+        sleep_baseline_deviation_14d:
+          type:
+          - number
+          - 'null'
+        wake_adverse_days_3d:
+          type: integer
+          minimum: 0
+          maximum: 3
+        low_regulation_days_3d:
+          type: integer
+          minimum: 0
+          maximum: 3
+        regulation_trend_3d:
+          type:
+          - number
+          - 'null'
+        dysregulation_events_7d:
+          type: integer
+          minimum: 0
+        days_since_last_dysregulation:
+          type:
+          - number
+          - 'null'
+          minimum: 0
+        adverse_factor_count_current:
+          type: integer
+          minimum: 0
+        relevant_trigger_exposure:
+          type: boolean
+        alert_outside_optimal:
+          type: boolean
+      additionalProperties: false
+    PredictionEngineInput:
+      type: object
+      required:
+      - child_id
+      - prediction_at
+      - horizon_hours
+      - features
+      - derived
+      - data_quality
+      properties:
+        child_id:
+          type: string
+        prediction_at:
+          type: string
+          format: date-time
+        horizon_hours:
+          type: integer
+          const: 24
+        features:
+          allOf:
+          - $ref: '#/components/schemas/CanonicalDailyFeatures'
+          description: Snapshot canónico conocido hasta prediction_at. El Backend debe garantizar feature.timestamp <= prediction_at.
+        derived:
+          $ref: '#/components/schemas/DerivedFeatures'
+        data_quality:
+          $ref: '#/components/schemas/DataQuality'
+      additionalProperties: false
+    PredictionEngineOutput:
+      $ref: '#/components/schemas/RiskPrediction'
+  responses:
+    BadRequest:
+      description: Solicitud inválida.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetails'
+    Unauthorized:
+      description: No autenticado.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetails'
+    Forbidden:
+      description: No autorizado para el recurso solicitado.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetails'
+    NotFound:
+      description: Recurso no encontrado.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetails'
+    Conflict:
+      description: Conflicto de estado o idempotencia.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetails'
+    ServerError:
+      description: Error interno.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetails'

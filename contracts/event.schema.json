@@ -1,0 +1,230 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:bluba:anticipa:contracts:event:0.1.0",
+  "title": "Bluba Anticipa Dysregulation Event Contract",
+  "description": "Contrato canónico para registrar escaladas y eventos de desregulación en el MVP NeuroHack 2026. El evento es evidencia longitudinal observada y constituye la fuente operacional para determinar posteriormente el target de desregulación en la ventana predictiva. El reporte express debe poder crearse con el mínimo de datos y enriquecerse posteriormente sin bloquear la atención del niño.",
+  "x-contract-version": "0.1.0",
+  "x-domain-invariants": [
+    "occurred_at representa el instante en que ocurrió o se observó el evento; created_at representa cuándo Backend lo persistió. Ambos deben preservarse independientemente.",
+    "El payload mínimo del reporte express requiere solamente occurred_at, event_type y context. Notas, desencadenantes y estrategia son información opcional y no deben impedir la creación inicial.",
+    "source y author_user_id son datos de trazabilidad del registro persistido. Backend debe derivarlos del usuario autenticado/contexto autorizado y no confiar en valores arbitrarios enviados por el cliente.",
+    "Para el target primario del modelo, una predicción en prediction_at es positiva solamente cuando existe un evento de tipo DYSREGULATION del mismo niño con prediction_at < occurred_at <= window_end_at. Los eventos ESCALATION se conservan como contexto longitudinal, pero no se consideran positivos del target primario del MVP.",
+    "trigger_tags, strategy_id y cualquier detalle identificado después del evento no pueden utilizarse como features para una predicción cuyo prediction_at sea anterior al evento. Hacerlo produciría data leakage.",
+    "El registro de una desregulación puede solicitar un RiskRecalculationRequested de forma asincrónica; la persistencia del evento no debe bloquearse esperando al motor predictivo.",
+    "strategy_id es una referencia opcional de contexto. El registro canónico de una intervención aplicada y su resultado pertenece a las entidades Intervention e InterventionResult.",
+    "Las modificaciones o enriquecimientos posteriores del evento deben conservar trazabilidad mediante versionado/sustitución o auditoría equivalente; no deben sobrescribir silenciosamente el historial.",
+    "Un evento de desregulación observado no debe inferirse a partir de regulation_level=desregulacion_frecuente. El evento y la regulación cotidiana son conceptos distintos."
+  ],
+  "oneOf": [
+    { "$ref": "#/$defs/DysregulationEventCreateRequest" },
+    { "$ref": "#/$defs/DysregulationEvent" },
+    { "$ref": "#/$defs/DysregulationEventAcceptedResponse" }
+  ],
+  "$defs": {
+    "RecordSource": {
+      "type": "string",
+      "enum": ["FAMILY", "SCHOOL", "PROFESSIONAL"]
+    },
+    "UsageContext": {
+      "type": "string",
+      "enum": ["HOME", "SCHOOL", "PROFESSIONAL"]
+    },
+    "DysregulationEventType": {
+      "type": "string",
+      "enum": ["ESCALATION", "DYSREGULATION"],
+      "description": "ESCALATION permite registrar una escalada temprana operacional. DYSREGULATION representa un evento confirmado que puede utilizarse para construir el target primario de las predicciones del MVP."
+    },
+    "PersistenceStatus": {
+      "type": "string",
+      "enum": ["PERSISTED", "PENDING_SYNC", "SYNCED"]
+    },
+    "TriggerTags": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 96
+      },
+      "uniqueItems": true,
+      "maxItems": 20,
+      "default": [],
+      "description": "Factores contextuales/desencadenantes observados o identificados alrededor del evento. Son información retrospectiva del evento y no pueden filtrarse hacia features de una predicción anterior a occurred_at."
+    },
+    "DysregulationEventCreateRequest": {
+      "type": "object",
+      "title": "DysregulationEventCreateRequest",
+      "description": "Payload lógico mínimo para el reporte express. child_id viaja normalmente en el path HTTP. El evento debe poder registrarse sin notas, trigger_tags ni strategy_id.",
+      "required": ["occurred_at", "event_type", "context"],
+      "properties": {
+        "occurred_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Instante asociado al evento. Para un reporte express la UI puede inicializarlo con la hora actual y permitir su corrección posterior con trazabilidad."
+        },
+        "event_type": { "$ref": "#/$defs/DysregulationEventType" },
+        "context": { "$ref": "#/$defs/UsageContext" },
+        "notes": {
+          "type": ["string", "null"],
+          "maxLength": 2000,
+          "description": "Detalle narrativo opcional. Nunca es obligatorio para el reporte express."
+        },
+        "trigger_tags": { "$ref": "#/$defs/TriggerTags" },
+        "strategy_id": {
+          "type": ["string", "null"],
+          "minLength": 1,
+          "maxLength": 128,
+          "description": "Referencia opcional a una estrategia conocida relacionada con el evento. No sustituye la entidad Intervention cuando se registra formalmente una estrategia aplicada."
+        }
+      },
+      "additionalProperties": false
+    },
+    "DysregulationEvent": {
+      "type": "object",
+      "title": "DysregulationEvent",
+      "description": "Entidad longitudinal persistida que representa una escalada o desregulación observada. Los eventos DYSREGULATION son la fuente de verdad operacional para construir el target futuro, no el nivel de regulación cotidiana.",
+      "required": [
+        "event_id",
+        "child_id",
+        "occurred_at",
+        "created_at",
+        "event_type",
+        "context",
+        "source",
+        "event_version"
+      ],
+      "properties": {
+        "event_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "child_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "author_user_id": {
+          "type": ["string", "null"],
+          "minLength": 1,
+          "maxLength": 128,
+          "description": "Usuario autenticado que reportó/confirmó el evento cuando corresponda."
+        },
+        "occurred_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updated_at": {
+          "type": ["string", "null"],
+          "format": "date-time"
+        },
+        "event_type": { "$ref": "#/$defs/DysregulationEventType" },
+        "context": { "$ref": "#/$defs/UsageContext" },
+        "source": { "$ref": "#/$defs/RecordSource" },
+        "notes": {
+          "type": ["string", "null"],
+          "maxLength": 2000
+        },
+        "trigger_tags": { "$ref": "#/$defs/TriggerTags" },
+        "strategy_id": {
+          "type": ["string", "null"],
+          "minLength": 1,
+          "maxLength": 128,
+          "description": "Referencia opcional de contexto. La aplicación de una estrategia debe poder modelarse separadamente como Intervention."
+        },
+        "event_version": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Versión lógica del evento para conservar trazabilidad cuando se completan/corrigen detalles posteriormente."
+        },
+        "supersedes_event_id": {
+          "type": ["string", "null"],
+          "minLength": 1,
+          "maxLength": 128,
+          "description": "Evento/version anterior sustituido, si Backend implementa correcciones append-only/versionadas."
+        }
+      },
+      "additionalProperties": false
+    },
+    "DysregulationEventAcceptedResponse": {
+      "type": "object",
+      "title": "DysregulationEventAcceptedResponse",
+      "description": "Confirmación inmediata del intento de reporte. Permite que la UI comunique persistencia/sincronización sin esperar al recálculo predictivo.",
+      "required": [
+        "event_id",
+        "child_id",
+        "occurred_at",
+        "event_type",
+        "context",
+        "persistence_status",
+        "risk_recalculation_requested"
+      ],
+      "properties": {
+        "event_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "child_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "occurred_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "event_type": { "$ref": "#/$defs/DysregulationEventType" },
+        "context": { "$ref": "#/$defs/UsageContext" },
+        "persistence_status": { "$ref": "#/$defs/PersistenceStatus" },
+        "risk_recalculation_requested": {
+          "type": "boolean",
+          "default": true
+        },
+        "risk_recalculation_request_id": {
+          "type": ["string", "null"],
+          "minLength": 1,
+          "maxLength": 128,
+          "description": "Identificador opcional para correlacionar el recálculo asíncrono solicitado por Backend."
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "examples": [
+    {
+      "occurred_at": "2026-08-26T11:05:00-04:00",
+      "event_type": "DYSREGULATION",
+      "context": "SCHOOL"
+    },
+    {
+      "event_id": "EVT-00128",
+      "child_id": "CH-002",
+      "author_user_id": "USR-EDU-015",
+      "occurred_at": "2026-08-26T11:05:00-04:00",
+      "created_at": "2026-08-26T11:05:07-04:00",
+      "updated_at": null,
+      "event_type": "DYSREGULATION",
+      "context": "SCHOOL",
+      "source": "SCHOOL",
+      "notes": null,
+      "trigger_tags": [],
+      "strategy_id": null,
+      "event_version": 1,
+      "supersedes_event_id": null
+    },
+    {
+      "event_id": "EVT-00128",
+      "child_id": "CH-002",
+      "occurred_at": "2026-08-26T11:05:00-04:00",
+      "event_type": "DYSREGULATION",
+      "context": "SCHOOL",
+      "persistence_status": "PERSISTED",
+      "risk_recalculation_requested": true,
+      "risk_recalculation_request_id": "RCR-00942"
+    }
+  ]
+}

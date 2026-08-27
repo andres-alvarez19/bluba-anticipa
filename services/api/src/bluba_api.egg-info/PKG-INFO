@@ -1,0 +1,14 @@
+Metadata-Version: 2.4
+Name: bluba-api
+Version: 0.1.0
+Summary: FastAPI service for Bluba Anticipa MVP bootstrap.
+Requires-Python: >=3.11
+Requires-Dist: alembic>=1.13
+Requires-Dist: fastapi>=0.115
+Requires-Dist: httpx>=0.28
+Requires-Dist: openapi-spec-validator>=0.7
+Requires-Dist: psycopg[binary]>=3.2
+Requires-Dist: python-dotenv>=1.0
+Requires-Dist: SQLAlchemy>=2.0
+Requires-Dist: uvicorn[standard]>=0.30
+Requires-Dist: bluba-predictor==0.1.0

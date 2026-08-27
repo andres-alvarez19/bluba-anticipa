@@ -1,0 +1,11 @@
+{
+  "scenario_id": "no-baseline",
+  "child_id": "eval-no-baseline",
+  "description": "Synthetic complete current record without enough valid history and without an interpretable recent trend.",
+  "prediction_at": "2026-08-26T12:00:00+00:00",
+  "history": [
+    {"recorded_at": "2026-08-26T08:00:00+00:00", "source": "FAMILY", "context": "HOME", "features": {"sleep_quality": "reparador", "sleep_hours": 8.0, "wake_state": "tranquilo_alegre", "regulation_level": "estable_con_apoyo", "alert_level": "optimo", "routine_change": false, "gastrointestinal_status": "normal", "observed_behavior": ["juego_funcional"], "exceptional_event": false, "sensory_profile_snapshot": ["hipersensibilidad_auditiva"]}}
+  ],
+  "events": [],
+  "expected": {"status": "INSUFFICIENT_DATA", "risk_null": true, "confidence_level": ["LOW", "MEDIUM", "HIGH"], "required_factor_codes": []}
+}

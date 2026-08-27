@@ -1,0 +1,18 @@
+name: model-change
+version: 1
+steps:
+  - read_agents_md
+  - read_ml_role
+  - confirm_prediction_contract_unchanged_or_delegate_contract_change
+  - define_evaluation_hypothesis
+  - verify_temporal_split_and_leakage_controls
+  - implement_reproducible_change
+  - run_model_evals
+  - validate_prediction_outputs
+  - compare_calibration_and_error_profile
+  - document_limitations
+  - request_reviewer
+rules:
+  fabricated_clinical_metrics: forbidden
+  risk_confidence_collapse: forbidden
+  silent_missing_imputation: forbidden

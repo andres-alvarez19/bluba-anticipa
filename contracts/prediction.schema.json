@@ -1,0 +1,869 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:bluba:anticipa:contracts:prediction:0.1.0",
+  "title": "Bluba Anticipa Prediction Contract",
+  "description": "Contrato canónico Backend ↔ motor predictivo para el MVP NeuroHack 2026. Define el snapshot de entrada y la salida versionada de riesgo, confianza, explicabilidad y calidad de datos. Los scores del MVP son índices operacionales/demostrativos y no probabilidades clínicas validadas.",
+  "x-contract-version": "0.1.0",
+  "x-domain-invariants": [
+    "prediction_at es el instante de corte: ninguna observación o feature usada por el motor puede corresponder a información posterior a ese instante.",
+    "horizon_hours es 24 y window_end_at debe representar prediction_at + 24 horas.",
+    "Riesgo y confianza se calculan de forma independiente.",
+    "Dato faltante no equivale a dato normal; debe conservarse explícitamente como null/desconocido y reflejarse en data_quality cuando corresponda.",
+    "scenario_id y scenario_type son metadatos de QA y nunca deben llegar al predictor.",
+    "El Frontend no recalcula thresholds, bandas de riesgo/confianza ni explicaciones.",
+    "Las recomendaciones preventivas quedan fuera de este contrato y son resueltas por Backend mediante fuentes controladas."
+  ],
+  "oneOf": [
+    {
+      "$ref": "#/$defs/PredictionEngineInput"
+    },
+    {
+      "$ref": "#/$defs/PredictionEngineOutput"
+    }
+  ],
+  "$defs": {
+    "SleepQuality": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "enum": [
+        "reparador",
+        "interrumpido",
+        "dificultad_conciliacion",
+        "desconocido",
+        null
+      ]
+    },
+    "WakeState": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "enum": [
+        "tranquilo_alegre",
+        "irritable_llorando",
+        "cansado_sueno",
+        "desconocido",
+        null
+      ]
+    },
+    "RegulationLevel": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "enum": [
+        "excelente",
+        "estable_con_apoyo",
+        "desregulacion_frecuente",
+        "desconocido",
+        null
+      ]
+    },
+    "AlertLevel": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "enum": [
+        "bajo",
+        "optimo",
+        "alto",
+        "desconocido",
+        null
+      ],
+      "description": "Categoría nominal. No debe interpretarse como una escala lineal: tanto bajo como alto pueden representar alejamiento del estado óptimo."
+    },
+    "RecordSource": {
+      "type": "string",
+      "enum": [
+        "FAMILY",
+        "SCHOOL",
+        "PROFESSIONAL"
+      ]
+    },
+    "RiskLevel": {
+      "type": "string",
+      "enum": [
+        "LOW",
+        "MEDIUM",
+        "HIGH"
+      ]
+    },
+    "ConfidenceLevel": {
+      "type": "string",
+      "enum": [
+        "LOW",
+        "MEDIUM",
+        "HIGH"
+      ]
+    },
+    "PredictionStatus": {
+      "type": "string",
+      "enum": [
+        "OK",
+        "LOW_CONFIDENCE",
+        "INSUFFICIENT_DATA",
+        "ERROR"
+      ]
+    },
+    "FactorDirection": {
+      "type": "string",
+      "enum": [
+        "INCREASES_RISK",
+        "DECREASES_RISK",
+        "NEUTRAL"
+      ]
+    },
+    "FactorType": {
+      "type": "string",
+      "enum": [
+        "DEVIATION",
+        "ACCUMULATION",
+        "CONTEXT",
+        "HISTORY",
+        "DATA_QUALITY"
+      ]
+    },
+    "MissingDataState": {
+      "type": "string",
+      "enum": [
+        "MISSING",
+        "STALE"
+      ]
+    },
+    "WarningSeverity": {
+      "type": "string",
+      "enum": [
+        "INFO",
+        "WARNING",
+        "ERROR"
+      ]
+    },
+    "CanonicalDailyFeatures": {
+      "type": "object",
+      "description": "Snapshot semántico normalizado conocido hasta prediction_at. Las claves se mantienen presentes para hacer explícitos los faltantes; sus valores pueden ser null/desconocido cuando el dominio lo permita.",
+      "required": [
+        "sleep_quality",
+        "sleep_hours",
+        "wake_state",
+        "regulation_level",
+        "alert_level",
+        "routine_change",
+        "gastrointestinal_status",
+        "observed_behavior",
+        "exceptional_event",
+        "sensory_profile"
+      ],
+      "properties": {
+        "sleep_quality": {
+          "$ref": "#/$defs/SleepQuality"
+        },
+        "sleep_hours": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0,
+          "maximum": 24,
+          "description": "Horas de sueño cuando están disponibles; null conserva explícitamente la ausencia."
+        },
+        "wake_state": {
+          "$ref": "#/$defs/WakeState"
+        },
+        "regulation_level": {
+          "$ref": "#/$defs/RegulationLevel"
+        },
+        "alert_level": {
+          "$ref": "#/$defs/AlertLevel"
+        },
+        "routine_change": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "gastrointestinal_status": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 64,
+          "description": "Categoría normalizada. El enum definitivo permanece abierto hasta cerrar el diccionario gastrointestinal del MVP."
+        },
+        "observed_behavior": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 96
+          },
+          "uniqueItems": true,
+          "default": []
+        },
+        "exceptional_event": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "sensory_profile": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 96
+          },
+          "uniqueItems": true,
+          "default": []
+        }
+      },
+      "additionalProperties": false
+    },
+    "DerivedFeatures": {
+      "type": "object",
+      "description": "Features longitudinales derivadas a partir de información con timestamp <= prediction_at. Las ventanas 3d/7d/14d son hiperparámetros del MVP y deben versionarse fuera del código.",
+      "required": [
+        "sleep_altered_days_3d",
+        "sleep_baseline_deviation_14d",
+        "wake_adverse_days_3d",
+        "low_regulation_days_3d",
+        "regulation_trend_3d",
+        "dysregulation_events_7d",
+        "days_since_last_dysregulation",
+        "adverse_factor_count_current",
+        "relevant_trigger_exposure",
+        "alert_outside_optimal"
+      ],
+      "properties": {
+        "sleep_altered_days_3d": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 3
+        },
+        "sleep_baseline_deviation_14d": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "description": "Desviación del sueño reciente respecto del baseline individual de 14 días válidos, según definición de features.yaml."
+        },
+        "wake_adverse_days_3d": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 3
+        },
+        "low_regulation_days_3d": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 3
+        },
+        "regulation_trend_3d": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "description": "Tendencia operacional de regulación para la ventana de 3 días. La fórmula exacta pertenece a features.yaml."
+        },
+        "dysregulation_events_7d": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "days_since_last_dysregulation": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "adverse_factor_count_current": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "relevant_trigger_exposure": {
+          "type": "boolean",
+          "description": "Exposición contextual conocida antes de prediction_at compatible con antecedentes/perfil; no corresponde al detonante identificado después de un evento."
+        },
+        "alert_outside_optimal": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    },
+    "MissingDataItem": {
+      "type": "object",
+      "required": [
+        "field",
+        "state"
+      ],
+      "properties": {
+        "field": {
+          "type": "string",
+          "minLength": 1,
+          "example": "sleep_quality"
+        },
+        "state": {
+          "$ref": "#/$defs/MissingDataState"
+        },
+        "priority": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 5,
+          "default": 3,
+          "description": "Prioridad operacional para solicitar información. 1 representa mayor prioridad."
+        },
+        "reason": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 500
+        }
+      },
+      "additionalProperties": false
+    },
+    "DataQuality": {
+      "type": "object",
+      "description": "Evidencia disponible para sostener la estimación. No modifica silenciosamente el risk score; alimenta el motor de confianza y los estados operacionales.",
+      "required": [
+        "completeness",
+        "history_days",
+        "sources",
+        "missing_fields"
+      ],
+      "properties": {
+        "completeness": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "critical_present": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "critical_total": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "hours_since_last_record": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "history_days": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "sources": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/RecordSource"
+          },
+          "uniqueItems": true
+        },
+        "missing_fields": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "uniqueItems": true
+        },
+        "missing_critical_data": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/MissingDataItem"
+          },
+          "default": []
+        },
+        "contains_synthetic_data": {
+          "type": "boolean",
+          "default": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "PredictionEngineInput": {
+      "type": "object",
+      "title": "PredictionEngineInput",
+      "description": "Payload canónico que Backend entrega al motor predictivo. Backend/Feature Service debe garantizar ausencia de data leakage antes de invocar este contrato.",
+      "required": [
+        "child_id",
+        "prediction_at",
+        "horizon_hours",
+        "features",
+        "derived",
+        "data_quality"
+      ],
+      "properties": {
+        "child_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "prediction_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "horizon_hours": {
+          "type": "integer",
+          "const": 24
+        },
+        "features": {
+          "$ref": "#/$defs/CanonicalDailyFeatures"
+        },
+        "derived": {
+          "$ref": "#/$defs/DerivedFeatures"
+        },
+        "data_quality": {
+          "$ref": "#/$defs/DataQuality"
+        }
+      },
+      "additionalProperties": false,
+      "examples": [
+        {
+          "child_id": "CH-002",
+          "prediction_at": "2026-07-17T20:00:00-04:00",
+          "horizon_hours": 24,
+          "features": {
+            "sleep_quality": "interrumpido",
+            "sleep_hours": null,
+            "wake_state": "irritable_llorando",
+            "regulation_level": "estable_con_apoyo",
+            "alert_level": "alto",
+            "routine_change": true,
+            "gastrointestinal_status": "normal",
+            "observed_behavior": [
+              "irritabilidad"
+            ],
+            "exceptional_event": false,
+            "sensory_profile": [
+              "hipersensibilidad_auditiva",
+              "evitacion_tactil"
+            ]
+          },
+          "derived": {
+            "sleep_altered_days_3d": 3,
+            "sleep_baseline_deviation_14d": 0.72,
+            "wake_adverse_days_3d": 2,
+            "low_regulation_days_3d": 1,
+            "regulation_trend_3d": -0.35,
+            "dysregulation_events_7d": 0,
+            "days_since_last_dysregulation": 11,
+            "adverse_factor_count_current": 4,
+            "relevant_trigger_exposure": true,
+            "alert_outside_optimal": true
+          },
+          "data_quality": {
+            "completeness": 0.82,
+            "critical_present": 9,
+            "critical_total": 11,
+            "hours_since_last_record": 4.0,
+            "history_days": 17,
+            "sources": [
+              "FAMILY",
+              "PROFESSIONAL"
+            ],
+            "missing_fields": [
+              "sleep_hours"
+            ],
+            "missing_critical_data": [],
+            "contains_synthetic_data": false
+          }
+        }
+      ]
+    },
+    "RiskValue": {
+      "type": "object",
+      "required": [
+        "score",
+        "level"
+      ],
+      "properties": {
+        "score": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "description": "Índice interno del motor. No implica probabilidad clínica calibrada."
+        },
+        "level": {
+          "$ref": "#/$defs/RiskLevel"
+        }
+      },
+      "additionalProperties": false
+    },
+    "ConfidenceValue": {
+      "type": "object",
+      "required": [
+        "score",
+        "level"
+      ],
+      "properties": {
+        "score": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "level": {
+          "$ref": "#/$defs/ConfidenceLevel"
+        }
+      },
+      "additionalProperties": false
+    },
+    "TopFactor": {
+      "type": "object",
+      "description": "Factor explicativo emitido por el motor y derivado de las mismas features usadas para calcular el resultado. No representa causalidad clínica.",
+      "required": [
+        "code",
+        "label"
+      ],
+      "properties": {
+        "code": {
+          "type": "string",
+          "pattern": "^[A-Z][A-Z0-9_]*$",
+          "example": "SLEEP_ALTERED_3D"
+        },
+        "label": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 240,
+          "example": "Sueño alterado durante 3 días"
+        },
+        "direction": {
+          "$ref": "#/$defs/FactorDirection"
+        },
+        "window": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 32,
+          "examples": [
+            "current",
+            "72h",
+            "7d",
+            "14d"
+          ]
+        },
+        "type": {
+          "$ref": "#/$defs/FactorType"
+        },
+        "contribution": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "description": "Magnitud explicativa opcional propia del motor; su escala depende de la implementación y no debe interpretarse como causalidad."
+        }
+      },
+      "additionalProperties": false
+    },
+    "PredictionWarning": {
+      "type": "object",
+      "required": [
+        "code",
+        "severity",
+        "message"
+      ],
+      "properties": {
+        "code": {
+          "type": "string",
+          "pattern": "^[A-Z][A-Z0-9_]*$"
+        },
+        "severity": {
+          "$ref": "#/$defs/WarningSeverity"
+        },
+        "message": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500
+        }
+      },
+      "additionalProperties": false
+    },
+    "PredictionEngineOutput": {
+      "type": "object",
+      "title": "PredictionEngineOutput",
+      "description": "Salida canónica versionada del motor. Backend puede adaptar el texto y profundidad por rol, pero no debe recalcular el resultado.",
+      "required": [
+        "prediction_id",
+        "child_id",
+        "prediction_at",
+        "window_end_at",
+        "horizon_hours",
+        "model_version",
+        "feature_schema_version",
+        "status",
+        "risk",
+        "confidence",
+        "top_factors",
+        "data_quality",
+        "warnings",
+        "required_fields"
+      ],
+      "properties": {
+        "prediction_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "child_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "prediction_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "window_end_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Debe corresponder a prediction_at + horizon_hours; esta relación temporal se valida en tests de dominio."
+        },
+        "horizon_hours": {
+          "type": "integer",
+          "const": 24
+        },
+        "model_version": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "examples": [
+            "hybrid-mvp-v1",
+            "synthetic-rule-demo-v1"
+          ]
+        },
+        "feature_schema_version": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "example": "features-mvp-v1"
+        },
+        "status": {
+          "$ref": "#/$defs/PredictionStatus"
+        },
+        "risk": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/RiskValue"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "confidence": {
+          "$ref": "#/$defs/ConfidenceValue"
+        },
+        "top_factors": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/TopFactor"
+          }
+        },
+        "data_quality": {
+          "$ref": "#/$defs/DataQuality"
+        },
+        "warnings": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/PredictionWarning"
+          }
+        },
+        "required_fields": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "uniqueItems": true,
+          "default": [],
+          "description": "Campos que Backend/UI debería priorizar solicitar cuando falta evidencia suficiente."
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "enum": [
+                  "OK",
+                  "LOW_CONFIDENCE"
+                ]
+              }
+            },
+            "required": [
+              "status"
+            ]
+          },
+          "then": {
+            "properties": {
+              "risk": {
+                "$ref": "#/$defs/RiskValue"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "INSUFFICIENT_DATA"
+              }
+            },
+            "required": [
+              "status"
+            ]
+          },
+          "then": {
+            "properties": {
+              "risk": {
+                "type": "null"
+              },
+              "required_fields": {
+                "minItems": 1
+              }
+            }
+          }
+        }
+      ],
+      "additionalProperties": false,
+      "examples": [
+        {
+          "prediction_id": "RPR-00451",
+          "child_id": "CH-002",
+          "prediction_at": "2026-07-17T20:00:00-04:00",
+          "window_end_at": "2026-07-18T20:00:00-04:00",
+          "horizon_hours": 24,
+          "model_version": "hybrid-mvp-v1",
+          "feature_schema_version": "features-mvp-v1",
+          "status": "OK",
+          "risk": {
+            "score": 0.76,
+            "level": "HIGH"
+          },
+          "confidence": {
+            "score": 0.68,
+            "level": "MEDIUM"
+          },
+          "top_factors": [
+            {
+              "code": "SLEEP_ALTERED_3D",
+              "label": "Sueño alterado durante 3 días",
+              "direction": "INCREASES_RISK",
+              "window": "72h",
+              "type": "ACCUMULATION",
+              "contribution": null
+            },
+            {
+              "code": "ROUTINE_CHANGE",
+              "label": "Cambio de rutina reciente",
+              "direction": "INCREASES_RISK",
+              "window": "current",
+              "type": "CONTEXT",
+              "contribution": null
+            }
+          ],
+          "data_quality": {
+            "completeness": 0.82,
+            "critical_present": 9,
+            "critical_total": 11,
+            "hours_since_last_record": 4.0,
+            "history_days": 17,
+            "sources": [
+              "FAMILY",
+              "PROFESSIONAL"
+            ],
+            "missing_fields": [
+              "sleep_hours"
+            ],
+            "missing_critical_data": [],
+            "contains_synthetic_data": false
+          },
+          "warnings": [
+            {
+              "code": "MISSING_SCHOOL_RECORD",
+              "severity": "INFO",
+              "message": "No existe registro escolar reciente."
+            }
+          ],
+          "required_fields": []
+        },
+        {
+          "prediction_id": "RPR-00452",
+          "child_id": "CH-002",
+          "prediction_at": "2026-07-19T08:00:00-04:00",
+          "window_end_at": "2026-07-20T08:00:00-04:00",
+          "horizon_hours": 24,
+          "model_version": "hybrid-mvp-v1",
+          "feature_schema_version": "features-mvp-v1",
+          "status": "INSUFFICIENT_DATA",
+          "risk": null,
+          "confidence": {
+            "score": 0.18,
+            "level": "LOW"
+          },
+          "top_factors": [],
+          "data_quality": {
+            "completeness": 0.27,
+            "critical_present": 2,
+            "critical_total": 11,
+            "hours_since_last_record": 30,
+            "history_days": 2,
+            "sources": [
+              "FAMILY"
+            ],
+            "missing_fields": [
+              "sleep_quality",
+              "wake_state",
+              "regulation_level"
+            ],
+            "missing_critical_data": [
+              {
+                "field": "sleep_quality",
+                "state": "MISSING",
+                "priority": 1,
+                "reason": "Variable crítica ausente para el snapshot actual."
+              },
+              {
+                "field": "wake_state",
+                "state": "MISSING",
+                "priority": 1,
+                "reason": "Variable crítica ausente para el snapshot actual."
+              },
+              {
+                "field": "regulation_level",
+                "state": "MISSING",
+                "priority": 1,
+                "reason": "Variable crítica ausente para el snapshot actual."
+              }
+            ],
+            "contains_synthetic_data": false
+          },
+          "warnings": [
+            {
+              "code": "INSUFFICIENT_CRITICAL_DATA",
+              "severity": "WARNING",
+              "message": "No existe evidencia mínima suficiente para emitir una estimación de riesgo."
+            }
+          ],
+          "required_fields": [
+            "sleep_quality",
+            "wake_state",
+            "regulation_level"
+          ]
+        }
+      ]
+    }
+  }
+}

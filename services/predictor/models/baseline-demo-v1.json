@@ -1,0 +1,113 @@
+{
+  "model_version": "baseline-demo-v1",
+  "horizon_hours": 24,
+  "windows": {
+    "accumulators_hours": 72,
+    "event_history_days": 7,
+    "baseline_provisional_min_valid_days": 7,
+    "baseline_target_valid_days": 14
+  },
+  "minimum_data": {
+    "critical_groups_total": 3,
+    "minimum_critical_groups_present": 2,
+    "max_record_age_hours": 72
+  },
+  "risk_levels": {
+    "LOW": {"min": 0.0, "max_exclusive": 0.35},
+    "MEDIUM": {"min": 0.35, "max_exclusive": 0.65},
+    "HIGH": {"min": 0.65, "max": 1.0}
+  },
+  "confidence_levels": {
+    "LOW": {"min": 0.0, "max_exclusive": 0.55},
+    "MEDIUM": {"min": 0.55, "max_exclusive": 0.8},
+    "HIGH": {"min": 0.8, "max": 1.0}
+  },
+  "risk_scoring": {
+    "intercept": 0.08,
+    "weights": {
+      "sleep_altered_days_3d": 0.11,
+      "sleep_baseline_deviation_14d": 0.18,
+      "wake_adverse_days_3d": 0.08,
+      "low_regulation_days_3d": 0.10,
+      "regulation_trend_3d": 0.22,
+      "dysregulation_events_7d": 0.08,
+      "adverse_factor_count_current": 0.06,
+      "relevant_trigger_exposure": 0.08,
+      "alert_outside_optimal": 0.07,
+      "routine_change": 0.09
+    }
+  },
+  "confidence_scoring": {
+    "minimum_score_for_prediction": 0.4,
+    "record_consistency_default": 0.5,
+    "weights": {
+      "critical_completeness": 0.40,
+      "record_recency": 0.20,
+      "source_coverage": 0.15,
+      "history_depth": 0.15,
+      "record_consistency": 0.10
+    }
+  },
+  "factor_mappings": {
+    "sleep_altered_days_3d": {
+      "label": "Sueño alterado durante los últimos 3 días",
+      "direction": "INCREASES_RISK",
+      "window": "72h",
+      "type": "ACCUMULATION"
+    },
+    "sleep_baseline_deviation_14d": {
+      "label": "Sueño diferente respecto de su patrón habitual",
+      "direction": "INCREASES_RISK",
+      "window": "baseline",
+      "type": "DEVIATION"
+    },
+    "wake_adverse_days_3d": {
+      "label": "Despertares adversos recientes",
+      "direction": "INCREASES_RISK",
+      "window": "72h",
+      "type": "ACCUMULATION"
+    },
+    "low_regulation_days_3d": {
+      "label": "Regulación más baja durante los últimos días",
+      "direction": "INCREASES_RISK",
+      "window": "72h",
+      "type": "ACCUMULATION"
+    },
+    "regulation_trend_3d": {
+      "label": "Tendencia de regulación descendente",
+      "direction": "INCREASES_RISK",
+      "window": "72h",
+      "type": "DEVIATION"
+    },
+    "dysregulation_events_7d": {
+      "label": "Desregulaciones registradas durante los últimos 7 días",
+      "direction": "INCREASES_RISK",
+      "window": "7d",
+      "type": "HISTORY"
+    },
+    "adverse_factor_count_current": {
+      "label": "Coincidencia de varios factores adversos",
+      "direction": "INCREASES_RISK",
+      "window": "current",
+      "type": "CONTEXT"
+    },
+    "relevant_trigger_exposure": {
+      "label": "Contexto relevante para su perfil individual",
+      "direction": "INCREASES_RISK",
+      "window": "current",
+      "type": "CONTEXT"
+    },
+    "alert_outside_optimal": {
+      "label": "Nivel de alerta fuera del rango óptimo",
+      "direction": "INCREASES_RISK",
+      "window": "current",
+      "type": "CONTEXT"
+    },
+    "routine_change": {
+      "label": "Cambio de rutina reciente",
+      "direction": "INCREASES_RISK",
+      "window": "current",
+      "type": "CONTEXT"
+    }
+  }
+}

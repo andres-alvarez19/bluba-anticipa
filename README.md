@@ -1,1 +1,117 @@
-# bluba-anticipa
+# Bluba Anticipa
+
+Bluba Anticipa es un sistema mobile-first de apoyo preventivo que analiza longitudinalmente registros cotidianos para identificar señales tempranas de riesgo de desregulación, estimar confianza independiente y explicar factores relevantes.
+
+Stage C implementa el slice demo `Estado de hoy`: mobile consulta el riesgo actual desde Backend, Backend construye features longitudinales y el predictor `baseline-demo-v1` entrega riesgo, confianza y factores. El score es un índice operacional demostrativo, no una probabilidad clínica calibrada.
+
+## Architecture
+
+```text
+Mobile
+  -> packages/api-client
+  -> FastAPI
+  -> PostgreSQL
+  -> FeatureBuilder
+  -> PredictionEngineInput
+  -> baseline-demo-v1
+  -> PredictionEngineOutput
+  -> PredictionService adapter
+  -> RiskPrediction
+  -> Mobile
+```
+
+Más detalle:
+
+- `docs/architecture/system.md`
+- `docs/architecture/data-flow.md`
+- `docs/architecture/contract-map.md`
+- `docs/architecture/decisions/`
+
+## Contracts
+
+`contracts/` es la fuente de verdad para fronteras. `contracts/features.yaml` es la fuente de verdad semántica para features, ventanas, missing data y baseline.
+
+Validar contratos:
+
+```bash
+make contracts
+```
+
+Verificar tipos generados desde OpenAPI:
+
+```bash
+make generate-check
+```
+
+## Run Locally
+
+Fresh environment:
+
+```bash
+make setup
+make db-up
+make db-migrate
+make seed-demo
+```
+
+Terminal 1:
+
+```bash
+make api
+```
+
+Terminal 2:
+
+```bash
+EXPO_PUBLIC_API_URL=<url> make mobile
+```
+
+URLs habituales:
+
+- iOS simulator: `http://localhost:8080`
+- Android emulator: `http://10.0.2.2:8080`
+- Physical device: `http://<LAN_IP>:8080`
+
+Runbook completo: `docs/development/demo-runbook.md`.
+
+## Tests And Evals
+
+```bash
+make typecheck
+make test
+make eval
+make lint
+```
+
+`make eval` ejecuta `evals/model/current-risk/`, una suite sintética de comportamiento para el current-risk Stage C. No mide accuracy clínica.
+
+Readiness local de demo:
+
+```bash
+make demo-check
+```
+
+## Demo web para video
+
+`apps/demo-web` es una superficie secundaria y no productiva autorizada por ADR-013. Consume la misma API y el mismo predictor que mobile; no calcula riesgo ni confianza.
+
+Desde un entorno preparado con `make setup`:
+
+```bash
+make demo-reset
+make demo
+```
+
+Abrir `http://localhost:5173/?demo=video`. El modo video comienza en Mateo y mantiene visible el selector Familia / Profesor / Especialista. Para repetir la historia, ejecutar `make demo-reset` en otra terminal y volver a Familia o recargar la página.
+
+El escenario sintético parte en riesgo MEDIUM con sueño reciente alterado y regulación todavía estable. El formulario escolar confirmado registra regulación con dificultades, alerta alta, cambio de rutina y sobrecarga por ruido. Esos datos producen una nueva predicción HIGH usando `baseline-demo-v1` sin cambiar pesos ni thresholds.
+
+## Harness De Agentes
+
+Leer `AGENTS.md` antes de modificar código. Roles: `.agents/roles/`. Workflows: `.agents/workflows/`. Contexto común: `.agents/context/`.
+
+Resumen de etapas:
+
+- Stage A: foundation de arquitectura, contratos, roles, workflows y ADRs.
+- Stage B: walking skeleton integrado con PostgreSQL, FastAPI, generated OpenAPI types y mobile.
+- Stage C: current risk vertical slice con FeatureBuilder, baseline demo, evals y demo UX.
