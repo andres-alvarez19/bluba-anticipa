@@ -1,0 +1,5 @@
+Metadata-Version: 2.4
+Name: bluba-predictor
+Version: 0.1.0
+Summary: Predictor package for Bluba Anticipa MVP bootstrap.
+Requires-Python: >=3.11

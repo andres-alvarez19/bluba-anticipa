@@ -98,7 +98,7 @@ class SqlAlchemyStore:
         return {"id": child_id, "display_name": display_name, "relationship_contexts": ["HOME"]}
 
     def ensure_demo_child(self) -> dict[str, Any]:
-        return self.add_child("child-demo-1", "Niño demo")
+        return self.add_child("child-demo-1", "Mateo R.")
 
     def list_children(self) -> list[dict[str, Any]]:
         with self.session_factory() as session:
@@ -139,6 +139,16 @@ class SqlAlchemyStore:
     def delete_daily_records(self, child_id: str) -> None:
         with self.session_factory() as session:
             session.execute(delete(DailyRecordModel).where(DailyRecordModel.child_id == child_id))
+            session.commit()
+
+    def delete_predictions(self, child_id: str) -> None:
+        with self.session_factory() as session:
+            session.execute(delete(PredictionModel).where(PredictionModel.child_id == child_id))
+            session.commit()
+
+    def delete_dysregulation_events(self, child_id: str) -> None:
+        with self.session_factory() as session:
+            session.execute(delete(EventModel).where(EventModel.child_id == child_id))
             session.commit()
 
     def latest_features(self, child_id: str) -> dict[str, Any]:

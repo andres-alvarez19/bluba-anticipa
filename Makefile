@@ -1,4 +1,4 @@
-.PHONY: setup dev mobile api predictor seed-demo db-up db-down db-migrate typecheck test test-mobile test-api test-model contracts generate generate-check lint eval eval-current-risk smoke-current-risk demo-check
+.PHONY: setup dev mobile api predictor seed-demo demo-reset demo db-up db-down db-migrate typecheck test test-mobile test-demo-web test-api test-model demo-web-build contracts generate generate-check lint eval eval-current-risk smoke-current-risk demo-check
 
 PYTHON ?= $(shell if [ -x .venv/bin/python ]; then printf ./.venv/bin/python; else printf python3; fi)
 PIP ?= $(PYTHON) -m pip
@@ -15,13 +15,20 @@ mobile:
 	npm --workspace apps/mobile run start
 
 api:
-	$(PYTHON) -m services.api
+	$(PYTHON) -m bluba_api
 
 predictor:
 	$(PYTHON) -m bluba_predictor
 
 seed-demo:
 	$(PYTHON) scripts/seed_demo.py
+
+demo-reset: db-up
+	$(PYTHON) scripts/prepare_demo_db.py
+	$(PYTHON) scripts/seed_demo.py
+
+demo: demo-reset
+	BLUBA_DEMO_PYTHON=$(PYTHON) bash scripts/run_demo.sh
 
 db-up:
 	docker compose up -d postgres
@@ -34,13 +41,21 @@ db-migrate:
 
 typecheck:
 	npm --workspace apps/mobile exec -- tsc --noEmit
+	npm --workspace apps/demo-web run typecheck
 
 test:
 	npm test
+	npm --workspace apps/demo-web run test
 	$(PYTHON) -m pytest -q
 
 test-mobile:
 	npm --workspace apps/mobile run test
+
+test-demo-web:
+	npm --workspace apps/demo-web run test
+
+demo-web-build:
+	npm --workspace apps/demo-web run build
 
 test-api:
 	$(PYTHON) -m pytest -q services/api tests/integration/api
@@ -59,6 +74,7 @@ generate-check:
 
 lint:
 	npm run lint
+	npm --workspace apps/demo-web run lint
 	$(PYTHON) scripts/lint_python.py
 
 eval:
@@ -77,3 +93,4 @@ demo-check:
 	$(MAKE) test
 	$(MAKE) eval
 	$(MAKE) lint
+	$(MAKE) demo-web-build

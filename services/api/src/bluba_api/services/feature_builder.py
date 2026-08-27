@@ -44,8 +44,7 @@ class FeatureBuilder:
         )
         all_events = self.store.list_dysregulation_events(child_id, to_at=prediction_at)
 
-        latest = self.store.latest_daily_record_before(child_id, prediction_at)
-        features = _canonical_features(latest)
+        features = _canonical_features(all_records)
         derived = _derived_features(features, recent_records, baseline_records, events_7d, all_events, prediction_at)
         data_quality = _data_quality(features, all_records, prediction_at)
 
@@ -59,8 +58,8 @@ class FeatureBuilder:
         )
 
 
-def _canonical_features(record: dict[str, Any] | None) -> dict[str, Any]:
-    values = dict(record.get("features") or {}) if record else {}
+def _canonical_features(records: list[dict[str, Any]]) -> dict[str, Any]:
+    values = _compose_latest_valid_features(records)
     sensory_profile = values.get("sensory_profile")
     if sensory_profile is None:
         sensory_profile = values.get("sensory_profile_snapshot")
@@ -179,10 +178,49 @@ def _data_quality(features: dict[str, Any], records: list[dict[str, Any]], predi
 
 
 def _latest_features_by_local_day(records: list[dict[str, Any]]) -> dict[Any, dict[str, Any]]:
-    by_day: dict[Any, dict[str, Any]] = {}
+    records_by_day: dict[Any, list[dict[str, Any]]] = {}
     for record in records:
-        by_day[parse_domain_datetime(record["recorded_at"]).date()] = dict(record.get("features") or {})
-    return by_day
+        records_by_day.setdefault(parse_domain_datetime(record["recorded_at"]).date(), []).append(record)
+    return {day: _compose_latest_valid_features(day_records) for day, day_records in records_by_day.items()}
+
+
+def _compose_latest_valid_features(records: list[dict[str, Any]]) -> dict[str, Any]:
+    """Compose partial observations without treating a later unknown as a normal value.
+
+    Canonical direct features use the latest valid observation known at the cutoff.
+    Tag observations are merged, as specified by contracts/features.yaml.
+    """
+    composed: dict[str, Any] = {}
+    observed_behavior: list[str] = []
+
+    for record in records:
+        values = dict(record.get("features") or {})
+        for field in (
+            "sleep_quality",
+            "sleep_hours",
+            "wake_state",
+            "regulation_level",
+            "alert_level",
+            "routine_change",
+            "gastrointestinal_status",
+            "exceptional_event",
+        ):
+            value = values.get(field)
+            if _known(value):
+                composed[field] = value
+
+        for tag in values.get("observed_behavior") or []:
+            if tag not in observed_behavior:
+                observed_behavior.append(tag)
+
+        sensory = values.get("sensory_profile")
+        if not sensory:
+            sensory = values.get("sensory_profile_snapshot")
+        if sensory:
+            composed["sensory_profile_snapshot"] = list(sensory)
+
+    composed["observed_behavior"] = observed_behavior
+    return composed
 
 
 def _baseline_records(records: list[dict[str, Any]], recent_start: datetime) -> list[dict[str, Any]]:

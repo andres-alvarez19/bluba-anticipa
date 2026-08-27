@@ -176,6 +176,42 @@ def test_synthetic_daily_records_mark_data_quality_without_extending_contract_pa
     assert engine_input.data_quality["contains_synthetic_data"] is True
 
 
+def test_partial_school_record_preserves_latest_valid_family_fields() -> None:
+    store = SqlAlchemyStore("sqlite+pysqlite:///:memory:")
+    store.create_schema()
+    store.add_child("child-1", "Mateo R.")
+    prediction_at = datetime(2026, 8, 26, 12, tzinfo=UTC)
+    store.add_daily_record(
+        "child-1",
+        _record(prediction_at - timedelta(hours=2), "interrumpido", "irritable_llorando", "estable_con_apoyo"),
+    )
+    school_record = _record(
+        prediction_at - timedelta(hours=1),
+        "desconocido",
+        "desconocido",
+        "desregulacion_frecuente",
+        sleep_hours=None,
+        routine_change=True,
+        alert_level="alto",
+        observed_behavior=["ruido_intenso"],
+    )
+    school_record["source"] = "SCHOOL"
+    school_record["context"] = "SCHOOL"
+    school_record["features"]["gastrointestinal_status"] = None
+    school_record["features"]["exceptional_event"] = None
+    school_record["features"]["sensory_profile_snapshot"] = []
+    store.add_daily_record("child-1", school_record)
+
+    engine_input = FeatureBuilder(store).build("child-1", prediction_at)
+
+    assert engine_input.features["sleep_quality"] == "interrumpido"
+    assert engine_input.features["wake_state"] == "irritable_llorando"
+    assert engine_input.features["regulation_level"] == "desregulacion_frecuente"
+    assert engine_input.features["alert_level"] == "alto"
+    assert engine_input.features["routine_change"] is True
+    assert engine_input.data_quality["sources"] == ["FAMILY", "SCHOOL"]
+
+
 def _record(
     recorded_at: datetime,
     sleep_quality: str | None,

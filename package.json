@@ -3,13 +3,15 @@
   "version": "0.1.0",
   "private": true,
   "workspaces": [
+    "apps/demo-web",
     "apps/mobile",
     "packages/*"
   ],
   "scripts": {
     "lint": "node scripts/lint-workspace.mjs",
-    "test": "node --test",
+    "test": "node --test \"apps/mobile/**/*.test.mjs\"",
     "test:mobile": "npm --workspace apps/mobile run test",
+    "test:demo-web": "npm --workspace apps/demo-web run test",
     "contracts": "python3 scripts/validate_contracts.py",
     "generate": "openapi-typescript contracts/openapi.yaml -o packages/api-client/src/generated/openapi.ts",
     "generate:check": "npm run generate -- --check"

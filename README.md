@@ -91,6 +91,21 @@ Readiness local de demo:
 make demo-check
 ```
 
+## Demo web para video
+
+`apps/demo-web` es una superficie secundaria y no productiva autorizada por ADR-013. Consume la misma API y el mismo predictor que mobile; no calcula riesgo ni confianza.
+
+Desde un entorno preparado con `make setup`:
+
+```bash
+make demo-reset
+make demo
+```
+
+Abrir `http://localhost:5173/?demo=video`. El modo video comienza en Mateo y mantiene visible el selector Familia / Profesor / Especialista. Para repetir la historia, ejecutar `make demo-reset` en otra terminal y volver a Familia o recargar la página.
+
+El escenario sintético parte en riesgo MEDIUM con sueño reciente alterado y regulación todavía estable. El formulario escolar confirmado registra regulación con dificultades, alerta alta, cambio de rutina y sobrecarga por ruido. Esos datos producen una nueva predicción HIGH usando `baseline-demo-v1` sin cambiar pesos ni thresholds.
+
 ## Harness De Agentes
 
 Leer `AGENTS.md` antes de modificar código. Roles: `.agents/roles/`. Workflows: `.agents/workflows/`. Contexto común: `.agents/context/`.
