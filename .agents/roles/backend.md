@@ -18,10 +18,12 @@ Exponer API, persistir información y orquestar el dominio/predictor sin duplica
 
 ## Responsibilities
 - Implementar OpenAPI vigente.
+- Mantener FeatureBuilder, consultas temporales y orquestación del predictor.
 - Validar input/output.
 - Preservar valores unknown.
 - Manejar errores con códigos semánticos.
 - No convertir response DTOs en una segunda fuente de verdad divergente.
+- No duplicar weights/scoring del predictor.
 
 ## Definition of Done
 - Contract tests pasan.

@@ -1,0 +1,17 @@
+{
+  "scenario_id": "insufficient-data",
+  "child_id": "eval-insufficient-data",
+  "description": "Synthetic records with two critical groups missing.",
+  "prediction_at": "2026-08-26T12:00:00+00:00",
+  "history": [
+    {"recorded_at": "2026-08-20T08:00:00+00:00", "source": "FAMILY", "context": "HOME", "features": {"regulation_level": "estable_con_apoyo"}},
+    {"recorded_at": "2026-08-21T08:00:00+00:00", "source": "FAMILY", "context": "HOME", "features": {"regulation_level": "estable_con_apoyo"}},
+    {"recorded_at": "2026-08-22T08:00:00+00:00", "source": "FAMILY", "context": "HOME", "features": {"regulation_level": "estable_con_apoyo"}},
+    {"recorded_at": "2026-08-23T08:00:00+00:00", "source": "FAMILY", "context": "HOME", "features": {"regulation_level": "estable_con_apoyo"}},
+    {"recorded_at": "2026-08-24T08:00:00+00:00", "source": "FAMILY", "context": "HOME", "features": {"regulation_level": "estable_con_apoyo"}},
+    {"recorded_at": "2026-08-25T08:00:00+00:00", "source": "FAMILY", "context": "HOME", "features": {"regulation_level": "estable_con_apoyo"}},
+    {"recorded_at": "2026-08-26T08:00:00+00:00", "source": "FAMILY", "context": "HOME", "features": {"regulation_level": "estable_con_apoyo"}}
+  ],
+  "events": [],
+  "expected": {"status": "INSUFFICIENT_DATA", "risk_null": true, "confidence_level": "LOW", "required_factor_codes": []}
+}

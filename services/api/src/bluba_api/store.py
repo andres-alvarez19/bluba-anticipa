@@ -32,6 +32,12 @@ def parse_domain_datetime(value: str) -> datetime:
     return parsed
 
 
+def _as_utc(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        return value.replace(tzinfo=UTC)
+    return value.astimezone(UTC)
+
+
 class ChildModel(Base):
     __tablename__ = "children"
 
@@ -102,7 +108,7 @@ class SqlAlchemyStore:
                 for child in children
             ]
 
-    def add_daily_record(self, child_id: str, record: dict[str, Any]) -> dict[str, Any]:
+    def add_daily_record(self, child_id: str, record: dict[str, Any], *, synthetic: bool = False) -> dict[str, Any]:
         record_id = f"daily-record-{uuid4()}"
         response = {
             "record_id": record_id,
@@ -119,7 +125,11 @@ class SqlAlchemyStore:
                     id=record_id,
                     child_id=child_id,
                     recorded_at=record["recorded_at"],
-                    payload={"request": record, "response": response},
+                    payload={
+                        "request": record,
+                        "response": response,
+                        "metadata": {"synthetic": synthetic},
+                    },
                     created_at=datetime.now(UTC),
                 )
             )
@@ -149,13 +159,8 @@ class SqlAlchemyStore:
                 .where(DailyRecordModel.child_id == child_id)
                 .order_by(DailyRecordModel.recorded_at.asc())
             ).all()
-        records = [dict(model.payload["request"]) for model in models]
-        return [
-            record
-            for record in records
-            if (from_at is None or parse_domain_datetime(record["recorded_at"]) > from_at)
-            and (to_at is None or parse_domain_datetime(record["recorded_at"]) <= to_at)
-        ]
+        records = [_daily_record_from_model(model) for model in models]
+        return _filter_by_interval(records, "recorded_at", from_at=from_at, to_at=to_at)
 
     def latest_daily_record_before(self, child_id: str, prediction_at: datetime) -> dict[str, Any] | None:
         records = self.list_daily_records(child_id, to_at=prediction_at)
@@ -188,12 +193,7 @@ class SqlAlchemyStore:
                 select(EventModel).where(EventModel.child_id == child_id).order_by(EventModel.occurred_at.asc())
             ).all()
         events = [dict(model.payload) for model in models]
-        return [
-            event
-            for event in events
-            if (from_at is None or parse_domain_datetime(event["occurred_at"]) > from_at)
-            and (to_at is None or parse_domain_datetime(event["occurred_at"]) <= to_at)
-        ]
+        return _filter_by_interval(events, "occurred_at", from_at=from_at, to_at=to_at)
 
     def set_latest_prediction(self, child_id: str, prediction: dict[str, Any]) -> None:
         with self.session_factory() as session:
@@ -217,3 +217,28 @@ class SqlAlchemyStore:
                 .limit(1)
             ).first()
             return None if model is None else dict(model.payload)
+
+
+def _daily_record_from_model(model: DailyRecordModel) -> dict[str, Any]:
+    payload = dict(model.payload)
+    record = dict(payload["request"])
+    metadata = dict(payload.get("metadata") or {})
+    record["_metadata"] = metadata
+    return record
+
+
+def _filter_by_interval(
+    items: list[dict[str, Any]],
+    timestamp_key: str,
+    *,
+    from_at: datetime | None,
+    to_at: datetime | None,
+) -> list[dict[str, Any]]:
+    from_utc = _as_utc(from_at) if from_at is not None else None
+    to_utc = _as_utc(to_at) if to_at is not None else None
+    eligible = []
+    for item in items:
+        timestamp = _as_utc(parse_domain_datetime(item[timestamp_key]))
+        if (from_utc is None or timestamp > from_utc) and (to_utc is None or timestamp <= to_utc):
+            eligible.append(item)
+    return sorted(eligible, key=lambda item: _as_utc(parse_domain_datetime(item[timestamp_key])))

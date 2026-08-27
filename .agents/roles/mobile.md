@@ -20,7 +20,8 @@ Implementar la aplicación React Native + Expo y experiencias por rol.
 
 ## Responsibilities
 - Phone-first UX.
-- Consumir contracts/API sin recalcular risk/confidence.
+- Consumir `packages/api-client` sin fetch manual duplicado.
+- Presentar risk/confidence/factors recibidos sin recalcular risk, confidence ni thresholds.
 - Implementar loading/error/empty/stale/insufficient states.
 - Confirmar extracción texto/voz antes de persistir.
 - No exponer datos sensibles en push.

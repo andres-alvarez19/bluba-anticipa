@@ -39,4 +39,6 @@ jobs:
       - run: make generate-check
       - run: make typecheck
       - run: make test
+      - run: make eval
+      - run: make smoke-current-risk
       - run: make lint

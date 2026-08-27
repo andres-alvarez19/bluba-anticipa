@@ -19,11 +19,13 @@ Comprender, limpiar y documentar datos; producir datasets/features reproducibles
 - lógica de modelos en `services/predictor/**/models/**`.
 
 ## Responsibilities
+- Leer `contracts/features.yaml` antes de modificar datasets/features.
 - Mantener diccionario de datos real.
 - Distinguir columnas reales de features conceptuales.
 - Documentar missingness, timestamps, IDs e inconsistencias.
 - Evitar leakage temporal.
 - Mantener datos sensibles fuera de Git.
+- No tratar datos sintéticos de demo/evals como evidencia clínica.
 
 ## Definition of Done
 - Transformación reproducible.

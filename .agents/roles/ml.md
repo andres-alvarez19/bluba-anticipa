@@ -18,7 +18,9 @@ Implementar baseline individual, feature engineering predictivo, scoring, confia
 - `services/api/**`
 
 ## Responsibilities
-- Exponer interfaz de dominio compatible con Prediction.
+- Exponer interfaz de dominio compatible con `PredictionEngineInput` -> `PredictionEngineOutput`.
+- Mantener implementación de baseline/modelos dentro de `services/predictor/**`.
+- Usar `contracts/features.yaml` como primera referencia semántica.
 - Evitar leakage temporal.
 - Separar risk de confidence.
 - Entregar factores trazables.
@@ -29,3 +31,4 @@ Implementar baseline individual, feature engineering predictivo, scoring, confia
 - Output valida contra contrato.
 - Modelo reproducible o baseline determinista.
 - Manejo explícito de insufficient data.
+- `make eval` pasa cuando cambia comportamiento del baseline.

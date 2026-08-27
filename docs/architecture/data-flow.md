@@ -1,59 +1,53 @@
 # Flujo de datos
 
-## Registro estructurado
+## Current Risk Stage C
 
 ```text
-Usuario -> Mobile -> DailyRecord contract -> API -> persistencia
-                                             |
-                                             v
-                                      feature assembly
-                                             |
-                                             v
-                                         predictor
-                                             |
-                                             v
-                                        Prediction
-                                             |
-                                             v
-                                           Mobile
+GET /v1/children/{childId}/risk-predictions/current
+  -> PredictionService
+  -> PostgreSQL history/events up to prediction_at
+  -> FeatureBuilder
+  -> PredictionEngineInput
+  -> baseline-demo-v1
+  -> PredictionEngineOutput
+  -> RiskPrediction
+  -> Mobile Estado de hoy
 ```
 
-## Texto/voz
+El flujo actual consulta riesgo preventivo; no captura DailyRecords desde la pantalla principal de demo.
+
+## FeatureBuilder
+
+1. Recupera DailyRecords y DysregulationEvents conocidos hasta `prediction_at`.
+2. Respeta intervalo `(from_at, to_at]` para ventanas temporales.
+3. Ordena por instantes reales normalizados, no por texto ISO.
+4. Construye features canónicas directas desde la última observación válida conocida.
+5. Calcula derivadas recientes/baseline según `contracts/features.yaml`.
+6. Produce `data_quality` con missing explícito, fuentes, frescura, historial válido y synthetic flag.
+
+## Predictor
+
+1. Recibe un `PredictionEngineInput` canónico.
+2. Valida horizonte 24h.
+3. Calcula risk y confidence como dimensiones independientes.
+4. Si corresponde `INSUFFICIENT_DATA`, entrega `risk = null`.
+5. Si corresponde `LOW_CONFIDENCE`, mantiene risk visible.
+6. Entrega top factors en el orden calculado por el motor.
+
+## Texto/Voz Futuro
 
 ```text
 voz/texto
-   |
-   v
-transcripción (si aplica)
-   |
-   v
-extracción de variables
-   |
-   v
-PREVIEW NO PERSISTIDO
-   |
-   v
-confirmación/edición humana
-   |
-   v
-DailyRecord
-   |
-   v
-API
+  -> transcripción/estructuración
+  -> preview no persistido
+  -> confirmación/edición humana
+  -> DailyRecord
+  -> API
 ```
 
-El componente generativo termina antes del motor predictivo.
+El componente generativo termina antes del motor predictivo. Un LLM no es motor de riesgo.
 
-## Predicción
-
-1. API recupera historial pertinente.
-2. Se construyen features directas y derivadas.
-3. Predictor calcula estado de predicción.
-4. Si la evidencia es insuficiente, `status=insufficient_data` y `risk=null`.
-5. Si existe evidencia suficiente, se entrega `risk` junto a `confidence`, `data_quality`, factores y recomendaciones seleccionadas.
-6. Mobile presenta el resultado según rol.
-
-## Feedback
+## Feedback Futuro
 
 ```text
 predicción -> ventana temporal -> feedback del usuario
@@ -62,4 +56,4 @@ predicción -> ventana temporal -> feedback del usuario
                                -> outcome
 ```
 
-El feedback futuro puede alimentar evaluación, calibración y memoria de intervenciones, pero no se usa como afirmación de aprendizaje clínico automático en el MVP.
+El feedback puede alimentar evaluación, calibración y memoria de intervenciones en etapas posteriores. No implica aprendizaje clínico automático en Stage C.

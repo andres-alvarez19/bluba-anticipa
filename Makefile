@@ -1,4 +1,4 @@
-.PHONY: setup dev mobile api predictor seed-demo db-up db-down db-migrate typecheck test test-mobile test-api test-model contracts generate generate-check lint eval
+.PHONY: setup dev mobile api predictor seed-demo db-up db-down db-migrate typecheck test test-mobile test-api test-model contracts generate generate-check lint eval eval-current-risk smoke-current-risk demo-check
 
 PYTHON ?= $(shell if [ -x .venv/bin/python ]; then printf ./.venv/bin/python; else printf python3; fi)
 PIP ?= $(PYTHON) -m pip
@@ -62,4 +62,18 @@ lint:
 	$(PYTHON) scripts/lint_python.py
 
 eval:
-	@echo "No model evals are implemented in BOOTSTRAP-01."
+	$(MAKE) eval-current-risk
+
+eval-current-risk:
+	$(PYTHON) scripts/eval_current_risk.py
+
+smoke-current-risk:
+	$(PYTHON) scripts/smoke_current_risk.py
+
+demo-check:
+	$(MAKE) contracts
+	$(MAKE) generate-check
+	$(MAKE) typecheck
+	$(MAKE) test
+	$(MAKE) eval
+	$(MAKE) lint

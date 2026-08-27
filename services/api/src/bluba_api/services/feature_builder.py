@@ -9,6 +9,10 @@ from bluba_predictor import PredictionEngineInput
 from bluba_api.store import SqlAlchemyStore, parse_domain_datetime
 
 
+BASELINE_MIN_VALID_DAYS = 7
+BASELINE_TARGET_VALID_DAYS = 14
+BASELINE_EXCLUDE_RECENT_HOURS = 72
+
 CANONICAL_FIELDS = (
     "sleep_quality",
     "sleep_hours",
@@ -28,13 +32,11 @@ class FeatureBuilder:
         self.store = store
 
     def build(self, child_id: str, prediction_at: datetime) -> PredictionEngineInput:
-        recent_start = prediction_at - timedelta(hours=72)
-        baseline_end = recent_start
-        baseline_start = baseline_end - timedelta(days=21)
+        recent_start = prediction_at - timedelta(hours=BASELINE_EXCLUDE_RECENT_HOURS)
 
         all_records = self.store.list_daily_records(child_id, to_at=prediction_at)
         recent_records = self.store.list_daily_records(child_id, from_at=recent_start, to_at=prediction_at)
-        baseline_records = self.store.list_daily_records(child_id, from_at=baseline_start, to_at=baseline_end)
+        baseline_records = _baseline_records(all_records, recent_start)
         events_7d = self.store.list_dysregulation_events(
             child_id,
             from_at=prediction_at - timedelta(days=7),
@@ -59,6 +61,9 @@ class FeatureBuilder:
 
 def _canonical_features(record: dict[str, Any] | None) -> dict[str, Any]:
     values = dict(record.get("features") or {}) if record else {}
+    sensory_profile = values.get("sensory_profile")
+    if sensory_profile is None:
+        sensory_profile = values.get("sensory_profile_snapshot")
     return {
         "sleep_quality": values.get("sleep_quality"),
         "sleep_hours": values.get("sleep_hours"),
@@ -69,7 +74,7 @@ def _canonical_features(record: dict[str, Any] | None) -> dict[str, Any]:
         "gastrointestinal_status": values.get("gastrointestinal_status"),
         "observed_behavior": list(values.get("observed_behavior") or []),
         "exceptional_event": values.get("exceptional_event"),
-        "sensory_profile": list(values.get("sensory_profile") or []),
+        "sensory_profile": list(sensory_profile or []),
     }
 
 
@@ -153,7 +158,7 @@ def _data_quality(features: dict[str, Any], records: list[dict[str, Any]], predi
         missing_critical_data.append(_missing_item("regulation_level", "Falta registrar regulación o conducta."))
 
     latest_recorded_at = parse_domain_datetime(records[-1]["recorded_at"]) if records else None
-    history_days = len({parse_domain_datetime(record["recorded_at"]).date() for record in records})
+    history_days = len(_valid_history_days(records))
     sources = sorted({record.get("source") for record in records if record.get("source")})
 
     return {
@@ -169,7 +174,7 @@ def _data_quality(features: dict[str, Any], records: list[dict[str, Any]], predi
         "sources": sources,
         "missing_fields": missing_fields,
         "missing_critical_data": missing_critical_data,
-        "contains_synthetic_data": any(bool(record.get("synthetic")) for record in records),
+        "contains_synthetic_data": any(bool((record.get("_metadata") or {}).get("synthetic")) for record in records),
     }
 
 
@@ -178,6 +183,41 @@ def _latest_features_by_local_day(records: list[dict[str, Any]]) -> dict[Any, di
     for record in records:
         by_day[parse_domain_datetime(record["recorded_at"]).date()] = dict(record.get("features") or {})
     return by_day
+
+
+def _baseline_records(records: list[dict[str, Any]], recent_start: datetime) -> list[dict[str, Any]]:
+    candidates = [record for record in records if parse_domain_datetime(record["recorded_at"]) <= recent_start]
+    by_day = _latest_valid_records_by_local_day(candidates)
+    ordered_days = sorted(by_day)[-BASELINE_TARGET_VALID_DAYS:]
+    return [by_day[day] for day in ordered_days]
+
+
+def _latest_valid_records_by_local_day(records: list[dict[str, Any]]) -> dict[Any, dict[str, Any]]:
+    by_day: dict[Any, dict[str, Any]] = {}
+    for record in records:
+        if _valid_history_record(record):
+            by_day[parse_domain_datetime(record["recorded_at"]).date()] = record
+    return by_day
+
+
+def _valid_history_days(records: list[dict[str, Any]]) -> set[Any]:
+    # provisional_mvp/demo_only/not_clinically_validated:
+    # feature-specific calculations use variable-known days; this general baseline
+    # availability depth conservatively requires evidence for at least two critical groups.
+    return set(_latest_valid_records_by_local_day(records))
+
+
+def _valid_history_record(record: dict[str, Any]) -> bool:
+    features = dict(record.get("features") or {})
+    critical_groups_present = sum(
+        [
+            _field_present("sleep_quality", features.get("sleep_quality")) or features.get("sleep_hours") is not None,
+            _field_present("wake_state", features.get("wake_state")),
+            _field_present("regulation_level", features.get("regulation_level"))
+            or bool(features.get("observed_behavior")),
+        ]
+    )
+    return critical_groups_present >= 2
 
 
 def _known(value: Any) -> bool:
@@ -224,7 +264,7 @@ def _simple_trend(values: list[float]) -> float | None:
 
 def _relevant_trigger_exposure(features: dict[str, Any]) -> bool:
     observed = set(features.get("observed_behavior") or [])
-    sensory = set(features.get("sensory_profile") or [])
+    sensory = set(features.get("sensory_profile") or features.get("sensory_profile_snapshot") or [])
     return "hipersensibilidad_auditiva" in sensory and bool(observed & {"ruido_intenso", "sobrecarga_sensorial"})
 
 

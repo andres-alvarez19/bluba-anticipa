@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 
+from sqlalchemy.exc import SQLAlchemyError
+
 from bluba_api.store import SqlAlchemyStore
 
 
@@ -9,12 +11,19 @@ CHILD_ID = "child-demo-1"
 
 
 def main() -> None:
-    store = SqlAlchemyStore()
-    store.create_schema()
-    store.ensure_demo_child()
-    store.delete_daily_records(CHILD_ID)
+    seed_demo(SqlAlchemyStore())
 
-    today = datetime.now(UTC).replace(hour=8, minute=0, second=0, microsecond=0)
+
+def seed_demo(store: SqlAlchemyStore, today: datetime | None = None) -> None:
+    try:
+        store.ensure_demo_child()
+        store.delete_daily_records(CHILD_ID)
+    except SQLAlchemyError as exc:
+        raise SystemExit(
+            "Seed demo requiere schema migrado. Ejecuta: make db-up && make db-migrate && make seed-demo."
+        ) from exc
+
+    today = (today or datetime.now(UTC)).replace(hour=8, minute=0, second=0, microsecond=0)
     start = today - timedelta(days=16)
     for offset in range(17):
         recorded_at = start + timedelta(days=offset)
@@ -28,8 +37,8 @@ def main() -> None:
                 "context": "HOME",
                 "features": features,
                 "notes": "Datos sinteticos reproducibles para demo Stage C.",
-                "synthetic": True,
             },
+            synthetic=True,
         )
 
     print(f"Seed demo listo: {CHILD_ID} con 17 DailyRecords sinteticos.")
@@ -46,7 +55,7 @@ def _baseline_features() -> dict[str, object]:
         "gastrointestinal_status": "normal",
         "observed_behavior": ["juego_funcional"],
         "exceptional_event": False,
-        "sensory_profile": ["hipersensibilidad_auditiva"],
+        "sensory_profile_snapshot": ["hipersensibilidad_auditiva"],
     }
 
 
@@ -66,7 +75,7 @@ def _recent_features(offset: int) -> dict[str, object]:
         "gastrointestinal_status": "normal",
         "observed_behavior": ["sobrecarga_sensorial", "ruido_intenso"],
         "exceptional_event": False,
-        "sensory_profile": ["hipersensibilidad_auditiva"],
+        "sensory_profile_snapshot": ["hipersensibilidad_auditiva"],
     }
 
 

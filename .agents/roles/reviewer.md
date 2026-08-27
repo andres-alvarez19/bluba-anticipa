@@ -18,6 +18,7 @@ Revisar cambios contra arquitectura, contratos, alcance y calidad; no reimplemen
 - ¿Unknown/insufficient data están tratados correctamente?
 - ¿Se introducen claims clínicos no validados?
 - ¿Hay tests pertinentes?
+- ¿Pasan contracts, evals y CI gates aplicables?
 - ¿El cambio está limitado al scope?
 
 ## Definition of Done

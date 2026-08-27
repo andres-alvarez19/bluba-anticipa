@@ -13,6 +13,21 @@ El resultado debe incluir:
 - estrategias preventivas provenientes de fuentes autorizadas;
 - advertencia cuando no exista información suficiente.
 
+## Estado de implementación
+
+Stage C implementa el slice `Estado de hoy`:
+
+```text
+GET current risk
+  -> FeatureBuilder
+  -> baseline-demo-v1
+  -> risk/confidence/factors
+```
+
+El modelo vigente es demostrativo, determinista y explicable. No tiene entrenamiento ni validación clínica. El score de riesgo es un índice operacional, no una probabilidad calibrada.
+
+La app mobile de Stage C consulta y presenta el estado; no captura registros productivos desde el flujo principal. Captura diaria, voz, recomendaciones, intervenciones e historial quedan para slices posteriores.
+
 ## Diferenciador
 
 El sistema compara principalmente al niño con su propio historial, no con una regla universal aplicada a todos. Busca responder:
