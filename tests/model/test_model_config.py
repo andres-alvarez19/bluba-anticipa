@@ -15,6 +15,8 @@ from bluba_predictor.config import (
     resolve_risk_level,
 )
 from bluba_predictor.engine import _risk_score
+from bluba_predictor.normalization import normalize_prediction_input
+from tests.model.test_predictor import _input
 
 
 RISK_KEYS = {
@@ -181,15 +183,7 @@ def test_temporary_scoring_config_remains_semantically_consistent() -> None:
     assert set(config.factor_mappings) == RISK_KEYS
     assert all(weight >= 0 for weight in config.risk_scoring.weights.values())
     assert {mapping.code for mapping in config.factor_mappings.values()} <= set(FactorCode)
-    _risk_score(_canonical_input(), config)
-
-
-def _canonical_input():
-    class Payload:
-        features = {"routine_change": False}
-        derived = {key: 0 for key in RISK_KEYS}
-
-    return Payload()
+    _risk_score(normalize_prediction_input(_input()), config)
 
 
 def _raw_config() -> dict:

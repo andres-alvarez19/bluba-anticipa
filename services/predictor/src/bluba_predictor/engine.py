@@ -6,35 +6,31 @@ from uuid import uuid4
 
 from .config import ModelConfig, load_model_config, resolve_confidence_level, resolve_risk_level
 from .domain import PredictionEngineInput, PredictionEngineOutput, PredictionStatus
+from .normalization import NormalizedDataQuality, NormalizedPredictionInput, normalize_prediction_input
 
 
 def predict(payload: PredictionEngineInput) -> PredictionEngineOutput:
     config = load_model_config()
-    if payload.horizon_hours != config.horizon_hours:
+    normalized = normalize_prediction_input(payload)
+    if normalized.horizon_hours != config.horizon_hours:
         raise ValueError(f"horizon_hours must be {config.horizon_hours}")
-    if not payload.child_id:
-        raise ValueError("child_id is required")
-    if not payload.prediction_at:
-        raise ValueError("prediction_at is required")
-    if not payload.features or not payload.derived or not payload.data_quality:
-        raise ValueError("features, derived, and data_quality are required")
 
-    prediction_at = _parse_datetime(payload.prediction_at)
-    confidence_score = _confidence_score(payload.data_quality, config)
+    prediction_at = _parse_datetime(normalized.prediction_at)
+    confidence_score = _confidence_score(normalized.data_quality, config)
     confidence_level = resolve_confidence_level(confidence_score, config)
     confidence = {"score": confidence_score, "level": confidence_level.value}
 
-    missing_critical = payload.data_quality.get("missing_critical_data") or []
-    critical_present = payload.data_quality.get("critical_present")
+    missing_critical = normalized.data_quality.missing_critical_data
+    critical_present = normalized.data_quality.critical_present
     if critical_present is None:
         critical_present = max(0, config.minimum_data.critical_groups_total - len(missing_critical))
-    risk_score, contributions = _risk_score(payload, config)
-    required_fields = _required_fields(payload.data_quality)
+    risk_score, contributions = _risk_score(normalized, config)
+    required_fields = _required_fields(normalized.data_quality)
     warnings: list[dict[str, Any]] = []
 
-    valid_history_days = payload.data_quality.get("history_days") or 0
+    valid_history_days = normalized.data_quality.history_days
     baseline_available = valid_history_days >= config.windows.baseline_provisional_min_valid_days
-    recent_trend_interpretable = payload.derived.get("regulation_trend_3d") is not None
+    recent_trend_interpretable = normalized.derived.regulation_trend_3d is not None
 
     no_baseline_and_no_trend = not baseline_available and not recent_trend_interpretable
 
@@ -58,7 +54,7 @@ def predict(payload: PredictionEngineInput) -> PredictionEngineOutput:
     else:
         status = PredictionStatus.LOW_CONFIDENCE if confidence_level.value == "LOW" else PredictionStatus.OK
         risk = {"score": risk_score, "level": resolve_risk_level(risk_score, config).value}
-        top_factors = _top_factors(contributions, payload, config)
+        top_factors = _top_factors(contributions, config)
         if status is PredictionStatus.LOW_CONFIDENCE:
             warnings.append(
                 {
@@ -70,16 +66,16 @@ def predict(payload: PredictionEngineInput) -> PredictionEngineOutput:
 
     return {
         "prediction_id": f"prediction-{uuid4()}",
-        "child_id": payload.child_id,
+        "child_id": normalized.child_id,
         "prediction_at": prediction_at.isoformat(),
-        "window_end_at": (prediction_at + timedelta(hours=payload.horizon_hours)).isoformat(),
-        "horizon_hours": payload.horizon_hours,
+        "window_end_at": (prediction_at + timedelta(hours=normalized.horizon_hours)).isoformat(),
+        "horizon_hours": normalized.horizon_hours,
         "model_version": config.model_version,
         "feature_schema_version": "features-mvp-v1",
         "status": status.value,
         "risk": risk,
         "confidence": confidence,
-        "data_quality": payload.data_quality,
+        "data_quality": normalized.data_quality.as_dict(),
         "top_factors": top_factors,
         "warnings": warnings,
         "required_fields": required_fields,
@@ -93,40 +89,37 @@ def _parse_datetime(value: str) -> datetime:
     return parsed
 
 
-def _risk_score(payload: PredictionEngineInput, config: ModelConfig) -> tuple[float, dict[str, float]]:
+def _risk_score(payload: NormalizedPredictionInput, config: ModelConfig) -> tuple[float, dict[str, float]]:
     weights = config.risk_scoring.weights
     derived = payload.derived
     values = {
-        "sleep_altered_days_3d": (derived.get("sleep_altered_days_3d") or 0) / 3,
-        "sleep_baseline_deviation_14d": max(0.0, derived.get("sleep_baseline_deviation_14d") or 0.0),
-        "wake_adverse_days_3d": (derived.get("wake_adverse_days_3d") or 0) / 3,
-        "low_regulation_days_3d": (derived.get("low_regulation_days_3d") or 0) / 3,
-        "regulation_trend_3d": max(0.0, -(derived.get("regulation_trend_3d") or 0.0)),
-        "dysregulation_events_7d": min((derived.get("dysregulation_events_7d") or 0) / 3, 1.0),
-        "adverse_factor_count_current": min((derived.get("adverse_factor_count_current") or 0) / 7, 1.0),
-        "relevant_trigger_exposure": 1.0 if derived.get("relevant_trigger_exposure") else 0.0,
-        "alert_outside_optimal": 1.0 if derived.get("alert_outside_optimal") else 0.0,
-        "routine_change": 1.0 if payload.features.get("routine_change") is True else 0.0,
+        "sleep_altered_days_3d": derived.sleep_altered_days_3d / 3,
+        "sleep_baseline_deviation_14d": max(0.0, derived.sleep_baseline_deviation_14d or 0.0),
+        "wake_adverse_days_3d": derived.wake_adverse_days_3d / 3,
+        "low_regulation_days_3d": derived.low_regulation_days_3d / 3,
+        "regulation_trend_3d": max(0.0, -(derived.regulation_trend_3d or 0.0)),
+        "dysregulation_events_7d": min(derived.dysregulation_events_7d / 3, 1.0),
+        "adverse_factor_count_current": min(derived.adverse_factor_count_current / 7, 1.0),
+        "relevant_trigger_exposure": 1.0 if derived.relevant_trigger_exposure else 0.0,
+        "alert_outside_optimal": 1.0 if derived.alert_outside_optimal else 0.0,
+        "routine_change": 1.0 if payload.features.routine_change is True else 0.0,
     }
     contributions = {key: round(values[key] * weights[key], 4) for key in values}
     score = config.risk_scoring.intercept + sum(contributions.values())
     return round(_clamp(score), 4), contributions
 
 
-def _confidence_score(data_quality: dict[str, Any], config: ModelConfig) -> float:
-    if not data_quality:
-        return 0.0
+def _confidence_score(data_quality: NormalizedDataQuality, config: ModelConfig) -> float:
     weights = config.confidence_scoring.weights
-    hours_since_last = data_quality.get("hours_since_last_record")
+    hours_since_last = data_quality.hours_since_last_record
     maximum_age = config.minimum_data.max_record_age_hours
     record_recency = 0.0 if hours_since_last is None else _clamp(1 - (hours_since_last / maximum_age))
-    sources = data_quality.get("sources") or []
     components = {
-        "critical_completeness": (data_quality.get("critical_present") or 0)
-        / (data_quality.get("critical_total") or config.minimum_data.critical_groups_total),
+        "critical_completeness": (data_quality.critical_present or 0)
+        / (data_quality.critical_total or config.minimum_data.critical_groups_total),
         "record_recency": record_recency,
-        "source_coverage": min(len(sources) / 2, 1.0),
-        "history_depth": min((data_quality.get("history_days") or 0) / config.windows.baseline_target_valid_days, 1.0),
+        "source_coverage": min(len(data_quality.sources) / 2, 1.0),
+        "history_depth": min(data_quality.history_days / config.windows.baseline_target_valid_days, 1.0),
         "record_consistency": config.confidence_scoring.record_consistency_default,
     }
     return round(_clamp(sum(components[key] * weights[key] for key in weights)), 4)
@@ -134,7 +127,6 @@ def _confidence_score(data_quality: dict[str, Any], config: ModelConfig) -> floa
 
 def _top_factors(
     contributions: dict[str, float],
-    payload: PredictionEngineInput,
     config: ModelConfig,
 ) -> list[dict[str, Any]]:
     candidates = [(key, value) for key, value in contributions.items() if value > 0]
@@ -155,9 +147,9 @@ def _top_factors(
     return factors
 
 
-def _required_fields(data_quality: dict[str, Any]) -> list[str]:
-    critical = [item["field"] for item in data_quality.get("missing_critical_data", [])]
-    return sorted(set(critical or data_quality.get("missing_fields", [])))
+def _required_fields(data_quality: NormalizedDataQuality) -> list[str]:
+    critical = [item.field for item in data_quality.missing_critical_data]
+    return sorted(set(critical or data_quality.missing_fields))
 
 
 def _clamp(value: float) -> float:

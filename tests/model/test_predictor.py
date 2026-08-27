@@ -47,10 +47,7 @@ def test_predictor_bootstrap_returns_insufficient_data_without_risk() -> None:
 
 def test_predictor_returns_demo_risk_with_explanatory_factors() -> None:
     prediction = predict(
-        PredictionEngineInput(
-            child_id="child-1",
-            prediction_at="2026-08-26T10:00:00+00:00",
-            horizon_hours=24,
+        _input(
             features={"routine_change": True},
             derived={
                 "sleep_altered_days_3d": 3,
@@ -64,17 +61,7 @@ def test_predictor_returns_demo_risk_with_explanatory_factors() -> None:
                 "relevant_trigger_exposure": True,
                 "alert_outside_optimal": True,
             },
-            data_quality={
-                "completeness": 1.0,
-                "critical_present": 3,
-                "critical_total": 3,
-                "hours_since_last_record": 2,
-                "history_days": 17,
-                "sources": ["FAMILY", "SCHOOL"],
-                "missing_fields": [],
-                "missing_critical_data": [],
-                "contains_synthetic_data": True,
-            },
+            data_quality={"history_days": 17, "contains_synthetic_data": True},
         )
     )
 
