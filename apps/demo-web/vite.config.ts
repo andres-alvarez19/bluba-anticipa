@@ -14,6 +14,12 @@ export default defineConfig(() => {
       },
     },
     server: {
+      // Keep the recording demo on a loopback origin. Browser microphone APIs
+      // require a secure context; localhost/127.0.0.1 are treated as trustworthy.
+      host: '127.0.0.1',
+      headers: {
+        'Permissions-Policy': 'microphone=(self)',
+      },
       hmr: process.env.DISABLE_HMR !== 'true',
       watch: process.env.DISABLE_HMR === 'true' ? null : {},
       proxy: {
