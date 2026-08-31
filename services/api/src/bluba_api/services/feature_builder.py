@@ -85,7 +85,10 @@ def _derived_features(
     all_events: list[dict[str, Any]],
     prediction_at: datetime,
 ) -> dict[str, Any]:
-    recent_by_day = _latest_features_by_local_day(recent_records)
+    # A rolling 72-hour interval can touch four calendar dates near midnight. The
+    # predictor contract defines these counters as three day buckets, so retain
+    # only the newest three local dates before counting.
+    recent_by_day = _newest_day_buckets(_latest_features_by_local_day(recent_records), 3)
     baseline_by_day = _latest_features_by_local_day(baseline_records)
 
     recent_sleep_known = [_sleep_altered(features) for features in recent_by_day.values() if _known(features.get("sleep_quality"))]
@@ -182,6 +185,10 @@ def _latest_features_by_local_day(records: list[dict[str, Any]]) -> dict[Any, di
     for record in records:
         records_by_day.setdefault(parse_domain_datetime(record["recorded_at"]).date(), []).append(record)
     return {day: _compose_latest_valid_features(day_records) for day, day_records in records_by_day.items()}
+
+
+def _newest_day_buckets(values: dict[Any, dict[str, Any]], limit: int) -> dict[Any, dict[str, Any]]:
+    return {day: values[day] for day in sorted(values)[-limit:]}
 
 
 def _compose_latest_valid_features(records: list[dict[str, Any]]) -> dict[str, Any]:

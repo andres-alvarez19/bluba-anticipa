@@ -5,9 +5,10 @@ from os import environ
 from typing import Any
 from uuid import uuid4
 
-from sqlalchemy import DateTime, String, create_engine, delete, select
+from sqlalchemy import Boolean, DateTime, String, create_engine, delete, select
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.engine import Engine
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, sessionmaker
 from sqlalchemy.pool import StaticPool
 from sqlalchemy.types import JSON
@@ -18,6 +19,10 @@ def default_database_url() -> str:
 
 
 class Base(DeclarativeBase):
+    pass
+
+
+class IdempotencyConflictError(ValueError):
     pass
 
 
@@ -76,6 +81,23 @@ class EventModel(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
+class ObservationDraftModel(Base):
+    __tablename__ = "observation_drafts"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    child_id: Mapped[str] = mapped_column(String(128), index=True, nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False)
+    payload: Mapped[dict[str, Any]] = mapped_column(_json_column_type(), nullable=False)
+    synthetic: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    idempotency_key: Mapped[str | None] = mapped_column(String(128), nullable=True, unique=True)
+    idempotency_fingerprint: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    confirmation_idempotency_key: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    confirmation_fingerprint: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    confirmed_record_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
 class SqlAlchemyStore:
     def __init__(self, database_url: str | None = None) -> None:
         self.database_url = database_url or default_database_url()
@@ -107,6 +129,174 @@ class SqlAlchemyStore:
                 {"id": child.id, "display_name": child.display_name, "relationship_contexts": ["HOME"]}
                 for child in children
             ]
+
+    def child_exists(self, child_id: str) -> bool:
+        with self.session_factory() as session:
+            return session.get(ChildModel, child_id) is not None
+
+    def add_observation_draft(
+        self,
+        draft: dict[str, Any],
+        *,
+        synthetic: bool = False,
+        idempotency_key: str | None = None,
+        idempotency_fingerprint: str | None = None,
+    ) -> dict[str, Any]:
+        now = datetime.now(UTC)
+        with self.session_factory() as session:
+            session.add(
+                ObservationDraftModel(
+                    id=draft["draft_id"],
+                    child_id=draft["child_id"],
+                    status=draft["status"],
+                    payload=draft,
+                    synthetic=synthetic,
+                    idempotency_key=idempotency_key,
+                    idempotency_fingerprint=idempotency_fingerprint,
+                    created_at=now,
+                    updated_at=now,
+                )
+            )
+            try:
+                session.commit()
+            except IntegrityError:
+                session.rollback()
+                if idempotency_key is None:
+                    raise
+                existing = session.scalar(
+                    select(ObservationDraftModel).where(ObservationDraftModel.idempotency_key == idempotency_key)
+                )
+                if existing is None:
+                    raise
+                if existing.idempotency_fingerprint != idempotency_fingerprint:
+                    raise IdempotencyConflictError(
+                        "idempotency key was already used with a different request"
+                    )
+                return dict(existing.payload)
+        return dict(draft)
+
+    def replay_observation_draft(self, idempotency_key: str, fingerprint: str) -> dict[str, Any] | None:
+        with self.session_factory() as session:
+            model = session.scalar(
+                select(ObservationDraftModel).where(ObservationDraftModel.idempotency_key == idempotency_key)
+            )
+            if model is None:
+                return None
+            if model.idempotency_fingerprint != fingerprint:
+                raise IdempotencyConflictError("idempotency key was already used with a different request")
+            return dict(model.payload)
+
+    def observation_draft_is_synthetic(self, draft_id: str) -> bool | None:
+        with self.session_factory() as session:
+            model = session.get(ObservationDraftModel, draft_id)
+            return None if model is None else model.synthetic
+
+    def get_observation_draft(self, draft_id: str) -> dict[str, Any] | None:
+        with self.session_factory() as session:
+            model = session.get(ObservationDraftModel, draft_id)
+            return None if model is None else dict(model.payload)
+
+    def update_observation_draft(self, draft_id: str, proposed_variables: list[dict[str, Any]]) -> dict[str, Any] | None:
+        with self.session_factory() as session:
+            model = session.get(ObservationDraftModel, draft_id)
+            if model is None:
+                return None
+            if model.status != "PENDING_CONFIRMATION":
+                raise ValueError("draft is not pending confirmation")
+            payload = dict(model.payload)
+            payload["proposed_variables"] = proposed_variables
+            model.payload = payload
+            model.updated_at = datetime.now(UTC)
+            session.commit()
+            return dict(payload)
+
+    def confirm_observation_draft(
+        self,
+        draft_id: str,
+        *,
+        recorded_at: str,
+        notes: str | None,
+        idempotency_key: str | None = None,
+        idempotency_fingerprint: str | None = None,
+    ) -> tuple[dict[str, Any], str, bool] | None:
+        """Atomically create one DailyRecord and mark the draft confirmed.
+
+        Repeated confirmation returns the original response and does not duplicate evidence.
+        """
+        with self.session_factory() as session:
+            model = session.scalar(
+                select(ObservationDraftModel)
+                .where(ObservationDraftModel.id == draft_id)
+                .with_for_update()
+            )
+            if model is None:
+                return None
+            payload = dict(model.payload)
+            if model.status == "CONFIRMED":
+                if model.confirmation_idempotency_key is not None and idempotency_key is not None:
+                    if (
+                        model.confirmation_idempotency_key != idempotency_key
+                        or model.confirmation_fingerprint != idempotency_fingerprint
+                    ):
+                        raise IdempotencyConflictError(
+                            "confirmation idempotency key or request does not match the original confirmation"
+                        )
+                confirmation = dict(payload["confirmation"])
+                return dict(confirmation["response"]), model.child_id, False
+            if model.status != "PENDING_CONFIRMATION":
+                raise ValueError("draft is not pending confirmation")
+
+            features = {
+                item["field"]: item["value"]
+                for item in payload["proposed_variables"]
+            }
+            source = {
+                "HOME": "FAMILY",
+                "SCHOOL": "SCHOOL",
+                "PROFESSIONAL": "PROFESSIONAL",
+            }[payload["context"]]
+            record = {
+                "recorded_at": recorded_at,
+                "source": source,
+                "context": payload["context"],
+                "features": features,
+                "notes": notes,
+                "provenance": "AI_EXTRACTED_HUMAN_CONFIRMED",
+                "source_observation": {
+                    "input_type": payload["input_type"],
+                    "observation_draft_id": draft_id,
+                    "source_text": payload.get("source_text") or payload.get("transcription"),
+                },
+            }
+            record_id = f"daily-record-{uuid4()}"
+            response = {
+                "record_id": record_id,
+                "child_id": model.child_id,
+                "recorded_at": recorded_at,
+                "source": source,
+                "persistence_status": "PERSISTED",
+                "risk_recalculation_requested": True,
+                "risk_recalculation_request_id": f"prediction-request-{uuid4()}",
+            }
+            session.add(
+                DailyRecordModel(
+                    id=record_id,
+                    child_id=model.child_id,
+                    recorded_at=recorded_at,
+                    payload={"request": record, "response": response, "metadata": {"synthetic": model.synthetic}},
+                    created_at=datetime.now(UTC),
+                )
+            )
+            payload["status"] = "CONFIRMED"
+            payload["confirmation"] = {"response": response}
+            model.status = "CONFIRMED"
+            model.confirmed_record_id = record_id
+            model.confirmation_idempotency_key = idempotency_key
+            model.confirmation_fingerprint = idempotency_fingerprint
+            model.payload = payload
+            model.updated_at = datetime.now(UTC)
+            session.commit()
+            return response, model.child_id, True
 
     def add_daily_record(self, child_id: str, record: dict[str, Any], *, synthetic: bool = False) -> dict[str, Any]:
         record_id = f"daily-record-{uuid4()}"
@@ -144,6 +334,11 @@ class SqlAlchemyStore:
     def delete_predictions(self, child_id: str) -> None:
         with self.session_factory() as session:
             session.execute(delete(PredictionModel).where(PredictionModel.child_id == child_id))
+            session.commit()
+
+    def delete_observation_drafts(self, child_id: str) -> None:
+        with self.session_factory() as session:
+            session.execute(delete(ObservationDraftModel).where(ObservationDraftModel.child_id == child_id))
             session.commit()
 
     def delete_dysregulation_events(self, child_id: str) -> None:

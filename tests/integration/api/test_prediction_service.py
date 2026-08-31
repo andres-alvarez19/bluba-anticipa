@@ -99,6 +99,29 @@ def test_feature_builder_excludes_future_records_and_events_from_cutoff_features
     assert engine_input.data_quality["history_days"] == 1
 
 
+def test_three_day_counters_do_not_exceed_three_when_72_hours_touch_four_dates() -> None:
+    store = SqlAlchemyStore("sqlite+pysqlite:///:memory:")
+    store.create_schema()
+    store.add_child("child-1", "Mateo")
+    prediction_at = datetime(2026, 8, 30, 1, tzinfo=UTC)
+    for hours_ago in (71, 48, 24, 1):
+        store.add_daily_record(
+            "child-1",
+            _record(
+                prediction_at - timedelta(hours=hours_ago),
+                "interrumpido",
+                "irritable_llorando",
+                "desregulacion_frecuente",
+            ),
+        )
+
+    engine_input = FeatureBuilder(store).build("child-1", prediction_at)
+
+    assert engine_input.derived["sleep_altered_days_3d"] == 3
+    assert engine_input.derived["wake_adverse_days_3d"] == 3
+    assert engine_input.derived["low_regulation_days_3d"] == 3
+
+
 def test_single_complete_recent_record_is_insufficient_data() -> None:
     store = SqlAlchemyStore("sqlite+pysqlite:///:memory:")
     store.create_schema()

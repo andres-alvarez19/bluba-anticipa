@@ -686,8 +686,8 @@ export default function App() {
             setShowQuickReportModal(false);
             setSelectedReportDateLabel(undefined);
           }}
-          onSaveReport={(variables, isVoice) => {
-            // Update family data with new observation
+          onConfirmed={async () => {
+            await refreshPrediction();
             setFamilyFixture((prev) => ({
               ...prev,
               lastUpdated: 'Recién registrado',

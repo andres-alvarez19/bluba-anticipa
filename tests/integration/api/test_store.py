@@ -59,6 +59,29 @@ def test_repository_orders_records_by_actual_instant_not_iso_offset_text() -> No
     assert [record["features"]["wake_state"] for record in records] == ["tranquilo_alegre", "irritable_llorando"]
 
 
+def test_repository_deletes_observation_drafts_only_for_requested_child() -> None:
+    store = SqlAlchemyStore("sqlite+pysqlite:///:memory:")
+    store.create_schema()
+    store.add_child("child-1", "Niño uno")
+    store.add_child("child-2", "Niño dos")
+    base_draft = {
+        "context": "HOME",
+        "input_type": "TEXT",
+        "source_text": "Observación de prueba",
+        "transcription": None,
+        "proposed_variables": [{"field": "wake_state", "value": "irritable_llorando"}],
+        "status": "PENDING_CONFIRMATION",
+        "expires_at": None,
+    }
+    store.add_observation_draft({**base_draft, "draft_id": "draft-1", "child_id": "child-1"})
+    store.add_observation_draft({**base_draft, "draft_id": "draft-2", "child_id": "child-2"})
+
+    store.delete_observation_drafts("child-1")
+
+    assert store.get_observation_draft("draft-1") is None
+    assert store.get_observation_draft("draft-2") is not None
+
+
 def _engine_input(features: dict[str, object]) -> PredictionEngineInput:
     return PredictionEngineInput(
         child_id="child-1",

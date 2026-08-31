@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import type { ObservationDraft } from '@bluba/api-client';
 import {
   X,
   Mic,
@@ -8,19 +9,22 @@ import {
   CheckCircle2,
   AlertTriangle,
   ArrowRight,
-  SlidersHorizontal,
-  Cloud,
   Check,
   ChevronRight,
   Moon,
   Zap,
   Building2,
   TrendingUp,
-  Plus,
-  Volume2
 } from 'lucide-react';
-import { ExtractedVariables, VoiceState, SaveStatus, ChildState } from '../types';
+import { VoiceState, SaveStatus, ChildState } from '../types';
 import { EditVariableSheet, EditableFieldKey } from './EditVariableSheet';
+import { demoApi } from '../demo/api';
+import { DEMO_CHILD_ID } from '../demo/constants';
+import {
+  currentEditableValue,
+  patchVariableFromEdit,
+  presentDraftVariables,
+} from '../demo/adapters/observationDraftAdapter';
 
 interface PredictiveVariableHint {
   id: string;
@@ -37,8 +41,10 @@ interface QuickReportModalProps {
   childData?: ChildState;
   customDateLabel?: string;
   onClose: () => void;
-  onSaveReport?: (variables: ExtractedVariables, isVoice: boolean) => void;
+  onConfirmed?: () => Promise<void>;
 }
+
+type ErrorRetryAction = 'return' | 'audio-upload';
 
 const PREDICTIVE_VARIABLES_BY_CHILD: Record<string, PredictiveVariableHint[]> = {
   'child-demo-1': [
@@ -98,11 +104,8 @@ const PREDICTIVE_VARIABLES_BY_CHILD: Record<string, PredictiveVariableHint[]> = 
   ]
 };
 
-const DEMO_TRANSCRIPT_VOICE =
-  'Mateo despertó con sueño interrumpido y un poco irritable. Nos comentaron que hoy en la escuela tendrán un acto especial con mucho ruido.';
-
 const DEMO_TEXT_PRESET =
-  'Anoche durmió 5.5 horas con 2 despertares. Amaneció más irritable y nos avisaron que hoy habrá un acto ruidoso en la escuela.';
+  'Anoche durmió 5.5 horas y se despertó 2 veces. Amaneció más irritable y nos avisaron que hoy habrá un acto especial en la escuela con mucho ruido.';
 
 export const QuickReportModal: React.FC<QuickReportModalProps> = ({
   isOpen,
@@ -111,7 +114,7 @@ export const QuickReportModal: React.FC<QuickReportModalProps> = ({
   childData,
   customDateLabel,
   onClose,
-  onSaveReport,
+  onConfirmed,
 }) => {
   const [activeTab, setActiveTab] = useState<'voice' | 'text'>(initialMode);
   const [step, setStep] = useState<'record' | 'review' | 'success'>('record');
@@ -119,23 +122,29 @@ export const QuickReportModal: React.FC<QuickReportModalProps> = ({
   // Voice Recording State
   const [voiceState, setVoiceState] = useState<VoiceState>('idle');
   const [voiceDuration, setVoiceDuration] = useState(0);
-  const [voiceTimerInterval, setVoiceTimerInterval] = useState<any>(null);
+  const voiceTimerRef = useRef<number | null>(null);
+  const recorderRef = useRef<MediaRecorder | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  const chunksRef = useRef<Blob[]>([]);
+  const recordingStartedAtRef = useRef<number | null>(null);
+  const createIdempotencyKeyRef = useRef<string | null>(null);
+  const confirmIdempotencyKeyRef = useRef<string | null>(null);
+  const pendingAudioRef = useRef<{ blob: Blob; mimeType: string } | null>(null);
 
   // Text State
   const [observationText, setObservationText] = useState('');
   const [selectedHints, setSelectedHints] = useState<string[]>([]);
 
-  // AI Extraction State
-  const [variables, setVariables] = useState<ExtractedVariables>({
-    sleep: 'Interrumpido',
-    wakeState: 'Irritable',
-    routineChange: 'Sí',
-    context: 'Escolar',
-  });
-
+  const [draft, setDraft] = useState<ObservationDraft | null>(null);
   const [activeEditField, setActiveEditField] = useState<EditableFieldKey | null>(null);
-  const [simulateError, setSimulateError] = useState(false);
   const [isErrorState, setIsErrorState] = useState(false);
+  const [errorMessage, setErrorMessage] = useState('Intenta nuevamente o ingresa el texto directamente.');
+  const [errorReturnStep, setErrorReturnStep] = useState<'record' | 'review'>('record');
+  const [errorRetryAction, setErrorRetryAction] = useState<ErrorRetryAction>('return');
+  const [isPatching, setIsPatching] = useState(false);
+  const [isConfirming, setIsConfirming] = useState(false);
+  const [isCreatingDraft, setIsCreatingDraft] = useState(false);
+  const [postConfirmError, setPostConfirmError] = useState<string | null>(null);
 
   // Sync state
   const [saveStatus, setSaveStatus] = useState<SaveStatus>({
@@ -149,6 +158,15 @@ export const QuickReportModal: React.FC<QuickReportModalProps> = ({
   const childKey = childData?.id || (childName.toLowerCase().includes('sof') ? 'sofia-m' : childName.toLowerCase().includes('luc') ? 'lucas-a' : 'child-demo-1');
   const predictiveHints = PREDICTIVE_VARIABLES_BY_CHILD[childKey] || PREDICTIVE_VARIABLES_BY_CHILD['child-demo-1'];
 
+  const releaseRecorder = () => {
+    if (voiceTimerRef.current !== null) window.clearInterval(voiceTimerRef.current);
+    voiceTimerRef.current = null;
+    streamRef.current?.getTracks().forEach((track) => track.stop());
+    streamRef.current = null;
+    recorderRef.current = null;
+    recordingStartedAtRef.current = null;
+  };
+
   // Sync initial tab when opened
   useEffect(() => {
     if (isOpen) {
@@ -156,50 +174,127 @@ export const QuickReportModal: React.FC<QuickReportModalProps> = ({
       setStep('record');
       setVoiceState('idle');
       setVoiceDuration(0);
+      setDraft(null);
       setIsErrorState(false);
+      setIsConfirming(false);
+      setIsCreatingDraft(false);
+      setPostConfirmError(null);
+      createIdempotencyKeyRef.current = null;
+      confirmIdempotencyKeyRef.current = null;
+      pendingAudioRef.current = null;
       setSelectedHints([]);
       setSaveStatus({ isSaved: false, isUpdatingRisk: false, updateCompleted: false, savedTimestamp: null });
-      if (initialMode === 'text' && !observationText) {
-        setObservationText(DEMO_TEXT_PRESET);
-      }
+      setObservationText(initialMode === 'text' ? DEMO_TEXT_PRESET : '');
+    } else {
+      releaseRecorder();
     }
   }, [isOpen, initialMode]);
 
+  useEffect(() => () => releaseRecorder(), []);
+
+  const presentedVariables = useMemo(() => draft ? presentDraftVariables(draft) : [], [draft]);
+
   if (!isOpen) return null;
 
-  // Start Voice Recording Simulation
-  const handleStartVoice = () => {
-    if (voiceState === 'listening' || voiceState === 'transcribing') return;
+  const createKey = () => globalThis.crypto?.randomUUID?.() ?? `demo-${Date.now()}-${Math.random()}`;
 
-    setVoiceState('listening');
-    setVoiceDuration(0);
-
-    const interval = setInterval(() => {
-      setVoiceDuration((prev) => prev + 1);
-    }, 1000);
-    setVoiceTimerInterval(interval);
+  const showError = (message: string, retryAction: ErrorRetryAction = 'return') => {
+    if (recorderRef.current?.state === 'recording') {
+      recorderRef.current.onstop = null;
+      recorderRef.current.stop();
+    }
+    releaseRecorder();
+    setErrorMessage(message);
+    setErrorReturnStep(step === 'review' ? 'review' : 'record');
+    setErrorRetryAction(retryAction);
+    setIsErrorState(true);
+    setVoiceState('idle');
   };
 
-  // Stop & Transcribe
-  const handleStopVoice = () => {
-    if (voiceTimerInterval) clearInterval(voiceTimerInterval);
-    setVoiceState('transcribing');
+  const acceptDraft = (nextDraft: ObservationDraft) => {
+    setDraft(nextDraft);
+    setObservationText(nextDraft.transcription ?? nextDraft.source_text ?? '');
+    setVoiceState('completed');
+    setStep('review');
+    confirmIdempotencyKeyRef.current = null;
+  };
 
-    setTimeout(() => {
-      setVoiceState('completed');
-      setObservationText(DEMO_TRANSCRIPT_VOICE);
-      setTimeout(() => {
-        if (simulateError) {
-          setIsErrorState(true);
-        } else {
-          setStep('review');
-        }
-      }, 700);
-    }, 1400);
+  const handleStartVoice = async () => {
+    if (voiceState === 'listening' || voiceState === 'transcribing') return;
+    if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') {
+      showError('Este navegador no permite grabar audio. Puedes continuar escribiendo la observación.');
+      return;
+    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const recorder = new MediaRecorder(stream);
+      chunksRef.current = [];
+      streamRef.current = stream;
+      recorderRef.current = recorder;
+      recordingStartedAtRef.current = Date.now();
+      createIdempotencyKeyRef.current = createKey();
+      pendingAudioRef.current = null;
+      recorder.ondataavailable = (event) => {
+        if (event.data.size > 0) chunksRef.current.push(event.data);
+      };
+      recorder.onerror = () => showError('La grabación se interrumpió. Intenta nuevamente o usa texto.');
+      recorder.onstop = () => void submitRecordedAudio(recorder.mimeType);
+      recorder.start();
+      setVoiceState('listening');
+      setVoiceDuration(0);
+      voiceTimerRef.current = window.setInterval(() => setVoiceDuration((previous) => previous + 1), 1000);
+    } catch (error) {
+      const denied = error instanceof DOMException && (error.name === 'NotAllowedError' || error.name === 'SecurityError');
+      showError(denied
+        ? 'No hay permiso para usar el micrófono. Habilítalo en el navegador o continúa por texto.'
+        : 'No pudimos iniciar el micrófono. Intenta nuevamente o continúa por texto.');
+    }
+  };
+
+  const handleStopVoice = () => {
+    if (!recorderRef.current || recorderRef.current.state !== 'recording') return;
+    if (voiceTimerRef.current !== null) window.clearInterval(voiceTimerRef.current);
+    voiceTimerRef.current = null;
+    setVoiceState('transcribing');
+    recorderRef.current.stop();
+  };
+
+  const submitRecordedAudio = async (mimeType: string) => {
+    const recordedMilliseconds = recordingStartedAtRef.current === null
+      ? 0
+      : Date.now() - recordingStartedAtRef.current;
+    const blob = new Blob(chunksRef.current, { type: mimeType || 'audio/webm' });
+    releaseRecorder();
+    if (chunksRef.current.length === 0 || blob.size === 0 || recordedMilliseconds < 300) {
+      showError('La grabación quedó vacía. Revisa el micrófono e intenta nuevamente.');
+      return;
+    }
+    pendingAudioRef.current = { blob, mimeType: blob.type || mimeType || 'audio/webm' };
+    await sendAudioDraft(blob, blob.type || mimeType || 'audio/webm');
+  };
+
+  const sendAudioDraft = async (blob: Blob, mimeType: string) => {
+    try {
+      const idempotencyKey = createIdempotencyKeyRef.current ?? createKey();
+      createIdempotencyKeyRef.current = idempotencyKey;
+      acceptDraft(await demoApi.createAudioObservationDraft({
+        child_id: childData?.id ?? DEMO_CHILD_ID,
+        context: 'HOME',
+        audio: blob,
+        mime_type: mimeType || null,
+      }, { idempotencyKey }));
+    } catch {
+      showError('No pudimos transcribir o procesar el audio. Puedes reenviar la misma grabación de forma segura.', 'audio-upload');
+    }
   };
 
   const handleCancelVoice = () => {
-    if (voiceTimerInterval) clearInterval(voiceTimerInterval);
+    if (recorderRef.current?.state === 'recording') {
+      recorderRef.current.onstop = null;
+      recorderRef.current.stop();
+    }
+    releaseRecorder();
+    chunksRef.current = [];
     setVoiceState('idle');
     setVoiceDuration(0);
   };
@@ -212,6 +307,7 @@ export const QuickReportModal: React.FC<QuickReportModalProps> = ({
     } else {
       setSelectedHints(prev => [...prev, hint.id]);
       if (activeTab === 'text') {
+        createIdempotencyKeyRef.current = null;
         setObservationText(prev => {
           const trimmed = prev.trim();
           if (!trimmed) return hint.quickSample;
@@ -223,16 +319,26 @@ export const QuickReportModal: React.FC<QuickReportModalProps> = ({
   };
 
   // Text Submit to AI extraction
-  const handleProcessText = () => {
-    if (simulateError) {
-      setIsErrorState(true);
-      return;
+  const handleProcessText = async () => {
+    try {
+      setIsCreatingDraft(true);
+      const idempotencyKey = createIdempotencyKeyRef.current ?? createKey();
+      createIdempotencyKeyRef.current = idempotencyKey;
+      acceptDraft(await demoApi.createTextObservationDraft({
+        child_id: childData?.id ?? DEMO_CHILD_ID,
+        context: 'HOME',
+        text: observationText.trim(),
+      }, { idempotencyKey }));
+    } catch {
+      showError('No pudimos procesar el texto. Revisa la conexión e intenta nuevamente.');
+    } finally {
+      setIsCreatingDraft(false);
     }
-    setStep('review');
   };
 
   // Confirm and Save
-  const handleConfirmAndSave = () => {
+  const handleConfirmAndSave = async () => {
+    if (!draft || isPatching) return;
     const now = new Date();
     const timeStr = now.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
 
@@ -242,24 +348,56 @@ export const QuickReportModal: React.FC<QuickReportModalProps> = ({
       updateCompleted: false,
       savedTimestamp: timeStr,
     });
-    setStep('success');
-
-    if (onSaveReport) {
-      onSaveReport(variables, activeTab === 'voice');
+    setIsConfirming(true);
+    try {
+      const idempotencyKey = confirmIdempotencyKeyRef.current ?? createKey();
+      confirmIdempotencyKeyRef.current = idempotencyKey;
+      await demoApi.confirmObservationDraft(draft.draft_id, {}, { idempotencyKey });
+    } catch {
+      setSaveStatus({ isSaved: false, isUpdatingRisk: false, updateCompleted: false, savedTimestamp: null });
+      showError('No pudimos completar o verificar la actualización. Puedes reintentar de forma segura.');
+      setIsConfirming(false);
+      return;
     }
 
-    setTimeout(() => {
+    setStep('success');
+    setIsConfirming(false);
+    try {
+      await onConfirmed?.();
       setSaveStatus((prev) => ({ ...prev, isUpdatingRisk: false, updateCompleted: true }));
-    }, 2000);
+    } catch {
+      setPostConfirmError('El registro quedó confirmado, pero no pudimos refrescar el estado. Puedes cerrar y reintentar desde la pantalla principal.');
+      setSaveStatus((prev) => ({ ...prev, isUpdatingRisk: false, updateCompleted: false }));
+    }
   };
 
-  const handleUpdateVariable = (key: EditableFieldKey, value: any) => {
-    setVariables((prev) => ({ ...prev, [key]: value }));
+  const handleUpdateVariable = (key: EditableFieldKey, value: string) => {
+    if (!draft) return;
+    const proposed_variables = patchVariableFromEdit(draft.proposed_variables, key, value);
+    setIsPatching(true);
+    void demoApi.patchObservationDraft(draft.draft_id, { proposed_variables })
+      .then(setDraft)
+      .catch(() => showError('No pudimos guardar la corrección. Reintenta antes de confirmar.'))
+      .finally(() => setIsPatching(false));
   };
 
   const handleCloseAndReset = () => {
-    if (voiceTimerInterval) clearInterval(voiceTimerInterval);
+    if (recorderRef.current?.state === 'recording') {
+      recorderRef.current.onstop = null;
+      recorderRef.current.stop();
+    }
+    releaseRecorder();
     onClose();
+  };
+
+  const handleRetry = () => {
+    setIsErrorState(false);
+    if (errorRetryAction === 'audio-upload' && pendingAudioRef.current) {
+      setVoiceState('transcribing');
+      void sendAudioDraft(pendingAudioRef.current.blob, pendingAudioRef.current.mimeType);
+      return;
+    }
+    setStep(errorReturnStep);
   };
 
   return (
@@ -303,9 +441,11 @@ export const QuickReportModal: React.FC<QuickReportModalProps> = ({
                 id="tab-mode-voice"
                 type="button"
                 onClick={() => {
+                  if (voiceState === 'listening') handleCancelVoice();
                   setActiveTab('voice');
                   setVoiceState('idle');
                 }}
+                disabled={voiceState === 'transcribing' || isCreatingDraft}
                 className={`py-2.5 px-3 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer border ${
                   activeTab === 'voice'
                     ? 'bg-[#004D6B] text-white border-[#004D6B] shadow-xs'
@@ -320,9 +460,11 @@ export const QuickReportModal: React.FC<QuickReportModalProps> = ({
                 id="tab-mode-text"
                 type="button"
                 onClick={() => {
+                  if (voiceState === 'listening') handleCancelVoice();
                   setActiveTab('text');
                   if (!observationText) setObservationText(DEMO_TEXT_PRESET);
                 }}
+                disabled={voiceState === 'transcribing' || isCreatingDraft}
                 className={`py-2.5 px-3 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer border ${
                   activeTab === 'text'
                     ? 'bg-[#004D6B] text-white border-[#004D6B] shadow-xs'
@@ -414,6 +556,7 @@ export const QuickReportModal: React.FC<QuickReportModalProps> = ({
                     <button
                       id="btn-voice-record-start"
                       type="button"
+                      aria-label="Iniciar grabación de voz"
                       onClick={handleStartVoice}
                       className="w-20 h-20 rounded-full bg-[#004D6B] hover:bg-[#00384E] text-white flex items-center justify-center mx-auto shadow-md shadow-[#004D6B]/20 transition-all hover:scale-105 active:scale-95 group cursor-pointer"
                     >
@@ -438,7 +581,7 @@ export const QuickReportModal: React.FC<QuickReportModalProps> = ({
 
                     <div className="space-y-1">
                       <span className="text-xs font-bold text-rose-700 block">
-                        Grabando… 0:0{voiceDuration}s
+                        Grabando… {Math.floor(voiceDuration / 60)}:{String(voiceDuration % 60).padStart(2, '0')}
                       </span>
                       <div className="flex items-center justify-center gap-1 h-5">
                         <span className="w-1 h-3 bg-[#004D6B] rounded-full animate-bounce [animation-delay:0.1s]"></span>
@@ -492,7 +635,10 @@ export const QuickReportModal: React.FC<QuickReportModalProps> = ({
                     </label>
                     <button
                       type="button"
-                      onClick={() => setObservationText(DEMO_TEXT_PRESET)}
+                      onClick={() => {
+                        createIdempotencyKeyRef.current = null;
+                        setObservationText(DEMO_TEXT_PRESET);
+                      }}
                       className="text-[10.5px] font-bold text-[#004D6B] hover:underline flex items-center gap-1 cursor-pointer"
                     >
                       <Sparkles className="w-3 h-3 text-[#004D6B]" />
@@ -504,7 +650,10 @@ export const QuickReportModal: React.FC<QuickReportModalProps> = ({
                     id="textarea-quick-report-observation"
                     rows={3}
                     value={observationText}
-                    onChange={(e) => setObservationText(e.target.value)}
+                    onChange={(e) => {
+                      createIdempotencyKeyRef.current = null;
+                      setObservationText(e.target.value);
+                    }}
                     placeholder="Escribe lo observado (sueño, despertar, eventos escolares)…"
                     className="w-full p-2.5 rounded-xl border border-slate-200 text-xs font-medium text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[#004D6B] focus:border-transparent transition-all shadow-2xs leading-relaxed resize-none"
                   />
@@ -514,11 +663,11 @@ export const QuickReportModal: React.FC<QuickReportModalProps> = ({
                   id="btn-process-text-to-review"
                   type="button"
                   onClick={handleProcessText}
-                  disabled={!observationText.trim()}
+                  disabled={!observationText.trim() || isCreatingDraft}
                   className="w-full h-10 bg-[#004D6B] hover:bg-[#00384E] disabled:opacity-50 text-white font-bold text-xs rounded-xl flex items-center justify-center gap-1.5 transition-all shadow-xs cursor-pointer"
                 >
-                  <span>Continuar</span>
-                  <ArrowRight className="w-4 h-4" />
+                  <span>{isCreatingDraft ? 'Identificando información…' : 'Continuar'}</span>
+                  {isCreatingDraft ? <RefreshCw className="w-4 h-4 animate-spin" /> : <ArrowRight className="w-4 h-4" />}
                 </button>
               </div>
             )}
@@ -538,58 +687,42 @@ export const QuickReportModal: React.FC<QuickReportModalProps> = ({
               </h3>
             </div>
 
-            {/* 4 Extracted Variables */}
             <div className="space-y-1.5">
-              <button
-                id="btn-edit-modal-var-sleep"
-                type="button"
-                onClick={() => setActiveEditField('sleep')}
-                className="w-full bg-white hover:bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-left flex items-center justify-between transition-all group cursor-pointer"
-              >
-                <div>
-                  <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider block">
-                    Sueño nocturno
+              {observationText && (
+                <div className="rounded-xl border border-sky-100 bg-sky-50/60 p-2.5">
+                  <span className="text-[10px] font-semibold uppercase tracking-wider text-sky-800">
+                    {activeTab === 'voice' ? 'Transcripción' : 'Observación original'}
                   </span>
-                  <span className="text-xs font-bold text-slate-800">
-                    {variables.sleep}
-                  </span>
+                  <p className="mt-1 text-[11px] leading-relaxed text-slate-600">{observationText}</p>
                 </div>
-                <ChevronRight className="w-3.5 h-3.5 text-slate-400 group-hover:text-[#004D6B]" />
-              </button>
+              )}
 
-              <button
-                id="btn-edit-modal-var-wake"
-                type="button"
-                onClick={() => setActiveEditField('wakeState')}
-                className="w-full bg-white hover:bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-left flex items-center justify-between transition-all group cursor-pointer"
-              >
-                <div>
-                  <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider block">
-                    Estado al despertar
-                  </span>
-                  <span className="text-xs font-bold text-amber-900">
-                    {variables.wakeState}
-                  </span>
+              {presentedVariables.length === 0 && (
+                <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-[11px] text-amber-900">
+                  No se identificaron variables. Vuelve atrás y agrega información antes de confirmar.
                 </div>
-                <ChevronRight className="w-3.5 h-3.5 text-slate-400 group-hover:text-[#004D6B]" />
-              </button>
+              )}
 
-              <button
-                id="btn-edit-modal-var-routine"
-                type="button"
-                onClick={() => setActiveEditField('routineChange')}
-                className="w-full bg-white hover:bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-left flex items-center justify-between transition-all group cursor-pointer"
-              >
-                <div>
-                  <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider block">
-                    Colegio / Rutina
-                  </span>
-                  <span className="text-xs font-bold text-slate-800">
-                    {variables.routineChange}
-                  </span>
-                </div>
-                <ChevronRight className="w-3.5 h-3.5 text-slate-400 group-hover:text-[#004D6B]" />
-              </button>
+              {presentedVariables.map((variable) => (
+                <button
+                  key={variable.field}
+                  id={`btn-edit-modal-var-${variable.field}`}
+                  type="button"
+                  disabled={!variable.editableField || isPatching}
+                  onClick={() => variable.editableField && setActiveEditField(variable.editableField)}
+                  className="w-full bg-white enabled:hover:bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-left flex items-center justify-between transition-all group enabled:cursor-pointer disabled:cursor-default"
+                >
+                  <div>
+                    <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider block">
+                      {variable.label}
+                    </span>
+                    <span className="text-xs font-bold text-slate-800">{variable.valueLabel}</span>
+                  </div>
+                  {variable.editableField && <ChevronRight className="w-3.5 h-3.5 text-slate-400 group-hover:text-[#004D6B]" />}
+                </button>
+              ))}
+
+              {isPatching && <p className="text-[10px] font-semibold text-[#004D6B]">Guardando corrección…</p>}
             </div>
 
             <div className="space-y-2 pt-2 border-t border-slate-100">
@@ -597,16 +730,20 @@ export const QuickReportModal: React.FC<QuickReportModalProps> = ({
                 id="btn-confirm-save-modal"
                 type="button"
                 onClick={handleConfirmAndSave}
-                className="w-full h-10 bg-[#004D6B] hover:bg-[#00384E] text-white font-bold text-xs rounded-xl flex items-center justify-center gap-1.5 transition-all shadow-xs cursor-pointer"
+                disabled={!draft || presentedVariables.length === 0 || isPatching || isConfirming}
+                className="w-full h-10 bg-[#004D6B] hover:bg-[#00384E] disabled:opacity-50 text-white font-bold text-xs rounded-xl flex items-center justify-center gap-1.5 transition-all shadow-xs cursor-pointer"
               >
                 <CheckCircle2 className="w-4 h-4 text-[#99CAE8]" />
-                <span>Confirmar y actualizar predicción</span>
+                <span>{isConfirming ? 'Confirmando registro…' : 'Confirmar y actualizar predicción'}</span>
               </button>
 
               <button
                 id="btn-back-to-record-modal"
                 type="button"
-                onClick={() => setStep('record')}
+                onClick={() => {
+                  createIdempotencyKeyRef.current = null;
+                  setStep('record');
+                }}
                 className="w-full text-slate-500 hover:text-slate-800 text-xs font-medium cursor-pointer py-1"
               >
                 Volver a grabar / escribir
@@ -626,19 +763,30 @@ export const QuickReportModal: React.FC<QuickReportModalProps> = ({
                 No pudimos procesar la nota
               </h3>
               <p className="text-[11px] text-amber-900/80 mt-0.5">
-                Intenta nuevamente o ingresa el texto directamente.
+                {errorMessage}
               </p>
             </div>
 
             <button
               type="button"
-              onClick={() => {
-                setIsErrorState(false);
-                setStep('record');
-              }}
+              onClick={handleRetry}
               className="w-full h-9 bg-[#004D6B] text-white font-bold text-xs rounded-xl cursor-pointer"
             >
               Reintentar
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setIsErrorState(false);
+                setActiveTab('text');
+                createIdempotencyKeyRef.current = null;
+                pendingAudioRef.current = null;
+                setObservationText((current) => current || DEMO_TEXT_PRESET);
+                setStep('record');
+              }}
+              className="w-full h-9 border border-[#99CAE8] bg-white text-[#004D6B] font-bold text-xs rounded-xl cursor-pointer"
+            >
+              Escribir en su lugar
             </button>
           </div>
         )}
@@ -655,15 +803,21 @@ export const QuickReportModal: React.FC<QuickReportModalProps> = ({
                 Reporte registrado
               </h3>
               <p className="text-xs text-slate-500 mt-0.5">
-                La predicción de hoy se ha actualizado.
+                {saveStatus.isUpdatingRisk
+                  ? 'Actualizando estado preventivo…'
+                  : saveStatus.updateCompleted
+                    ? 'El estado preventivo compartido ya está actualizado.'
+                    : 'Registro confirmado.'}
               </p>
+              {postConfirmError && <p className="mt-2 text-[11px] text-amber-800">{postConfirmError}</p>}
             </div>
 
             <button
               id="btn-finish-quick-report-modal"
               type="button"
               onClick={handleCloseAndReset}
-              className="w-full h-10 bg-[#004D6B] hover:bg-[#00384E] text-white font-bold text-xs rounded-xl shadow-xs transition-all cursor-pointer"
+              disabled={saveStatus.isUpdatingRisk}
+              className="w-full h-10 bg-[#004D6B] hover:bg-[#00384E] disabled:opacity-50 text-white font-bold text-xs rounded-xl shadow-xs transition-all cursor-pointer"
             >
               Listo
             </button>
@@ -674,7 +828,7 @@ export const QuickReportModal: React.FC<QuickReportModalProps> = ({
         {activeEditField && (
           <EditVariableSheet
             fieldKey={activeEditField}
-            currentValue={variables[activeEditField]}
+            currentValue={draft ? currentEditableValue(draft.proposed_variables, activeEditField) : 'No lo sé'}
             onSaveValue={handleUpdateVariable}
             onClose={() => setActiveEditField(null)}
           />

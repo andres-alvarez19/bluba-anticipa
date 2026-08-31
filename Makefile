@@ -41,10 +41,12 @@ db-migrate:
 
 typecheck:
 	npm --workspace apps/mobile exec -- tsc --noEmit
+	npm --workspace packages/api-client run typecheck
 	npm --workspace apps/demo-web run typecheck
 
 test:
 	npm test
+	npm --workspace packages/api-client run test
 	npm --workspace apps/demo-web run test
 	$(PYTHON) -m pytest -q
 

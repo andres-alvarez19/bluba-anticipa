@@ -10,6 +10,7 @@ dependencies = [
   "openapi-spec-validator>=0.7",
   "psycopg[binary]>=3.2",
   "python-dotenv>=1.0",
+  "python-multipart>=0.0.9",
   "SQLAlchemy>=2.0",
   "uvicorn[standard]>=0.30",
   "bluba-predictor==0.1.0"

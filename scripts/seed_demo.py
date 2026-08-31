@@ -27,6 +27,7 @@ def seed_demo(store: SqlAlchemyStore, today: datetime | None = None) -> None:
         store.delete_daily_records(CHILD_ID)
         store.delete_predictions(CHILD_ID)
         store.delete_dysregulation_events(CHILD_ID)
+        store.delete_observation_drafts(CHILD_ID)
     except SQLAlchemyError as exc:
         raise SystemExit(
             "Seed demo requiere schema migrado. Ejecuta: make db-up && make db-migrate && make demo-reset."

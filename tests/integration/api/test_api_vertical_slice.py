@@ -98,10 +98,24 @@ def test_seed_demo_is_idempotent_for_logical_scenario_and_risk_band() -> None:
             "context": "HOME",
         },
     )
+    store.add_observation_draft(
+        {
+            "draft_id": "draft-from-previous-demo-run",
+            "child_id": CHILD_ID,
+            "context": "HOME",
+            "input_type": "TEXT",
+            "source_text": "Texto sensible de una ejecución anterior.",
+            "transcription": None,
+            "proposed_variables": [{"field": "wake_state", "value": "irritable_llorando"}],
+            "status": "PENDING_CONFIRMATION",
+            "expires_at": None,
+        }
+    )
     seed_demo(store, today=today)
     second_records = store.list_daily_records(CHILD_ID)
     assert store.get_latest_prediction(CHILD_ID) is None
     assert store.list_dysregulation_events(CHILD_ID) == []
+    assert store.get_observation_draft("draft-from-previous-demo-run") is None
     second_prediction = PredictionService(store).evaluate_current(CHILD_ID, prediction_at=today)
 
     assert len(first_records) == 17

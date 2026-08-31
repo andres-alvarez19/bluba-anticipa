@@ -1,6 +1,5 @@
 import React from 'react';
 import { X, Check, Edit2 } from 'lucide-react';
-import { ExtractedVariables, SleepOption, WakeOption } from '../types';
 
 export type EditableFieldKey = 'sleep' | 'wakeState' | 'routineChange' | 'context';
 
@@ -19,9 +18,9 @@ const FIELD_CONFIGS: Record<
     title: 'Editar: Sueño',
     subtitle: 'Selecciona cómo descansó anoche',
     options: [
-      { label: 'Bien', desc: 'Sueño continuo y reparador (>7,5 h)' },
+      { label: 'Reparador', desc: 'Sueño continuo y reparador' },
       { label: 'Interrumpido', desc: 'Varios despertares en la noche' },
-      { label: 'Poco', desc: 'Menor a su promedio (<6 h)' },
+      { label: 'Dificultad para conciliar', desc: 'Le costó iniciar el sueño' },
       { label: 'No lo sé', desc: 'Sin registro disponible' },
     ],
   },
@@ -32,7 +31,6 @@ const FIELD_CONFIGS: Record<
       { label: 'Tranquilo', desc: 'Despertar calmo y fluido' },
       { label: 'Irritable', desc: 'Baja tolerancia a la frustración' },
       { label: 'Cansado', desc: 'Fatiga física o somnolencia' },
-      { label: 'Más sensible', desc: 'Mayor reactividad sensorial/emocional' },
       { label: 'No lo sé', desc: 'Sin información' },
     ],
   },

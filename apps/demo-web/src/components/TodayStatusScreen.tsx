@@ -19,7 +19,9 @@ import {
   ThumbsUp,
   ThumbsDown,
   CheckCircle2,
-  RotateCcw
+  RotateCcw,
+  Mic,
+  FileText,
 } from 'lucide-react';
 import { ChildState, ActiveScreen } from '../types';
 import { RiskExplanationModal } from './RiskExplanationModal';
@@ -38,6 +40,7 @@ export const TodayStatusScreen: React.FC<TodayStatusScreenProps> = ({
   data,
   onNavigate,
   onOpenPreventiveModal,
+  onOpenQuickReport,
   availableChildren = [],
   onSelectChild,
 }) => {
@@ -171,6 +174,29 @@ export const TodayStatusScreen: React.FC<TodayStatusScreenProps> = ({
           </div>
         )}
       </section>
+
+      {onOpenQuickReport && (
+        <section id="block-quick-observation-actions" className="grid grid-cols-[1fr_auto] gap-2">
+          <button
+            id="btn-today-report-voice"
+            type="button"
+            onClick={() => onOpenQuickReport('voice')}
+            className="min-h-12 rounded-2xl bg-[#004D6B] px-4 text-white shadow-sm flex items-center justify-center gap-2 text-xs font-bold hover:bg-[#00384E] active:scale-[0.98] transition-all"
+          >
+            <Mic className="h-4 w-4" />
+            Contarlo por voz
+          </button>
+          <button
+            id="btn-today-report-text"
+            type="button"
+            onClick={() => onOpenQuickReport('text')}
+            className="min-h-12 rounded-2xl border border-[#99CAE8] bg-white px-3 text-[#004D6B] flex items-center justify-center gap-1.5 text-xs font-bold hover:bg-[#EAF6FC] active:scale-[0.98] transition-all"
+          >
+            <FileText className="h-4 w-4" />
+            Escribir
+          </button>
+        </section>
+      )}
 
       {/* 2. COMPONENTE CENTRAL: ESTADO PREVENTIVO CON GRÁFICOS INTERACTIVOS */}
       <section
